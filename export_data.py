@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """دانلود دیتای کندل از متاتریدر ۵ برای بک‌تست.
 
-اجرا:  روی export_data.bat دابل‌کلیک کن   (یا:  python export_data.py)
+اجرا:  روی export_data.bat دابل‌کلیک کن  (یا روی خود همین export_data.py دابل‌کلیک کن)
 پیش‌نیاز: متاتریدر ۵ باز و لاگین باشد (همان بروکری که ربات رویش کار می‌کند).
 
 برای هر نماد یک فایل ZIP می‌سازد (مثلاً XAUUSD.zip) که داخلش برای هر تایم‌فریم یک CSV
@@ -77,16 +77,25 @@ BARS_PER_YEAR = {"M1": 374400, "M5": 74880, "M15": 24960, "M30": 12480, "H1": 62
                  "H4": 1560, "D1": 260, "W1": 52}
 REQUIRED_LABELS = ("240", "1D", "1W")
 
+def _fail(msg):
+    """پیام خطا + (اگر مستقیم دابل‌کلیک شده) صبر تا کاربر پیام را بخواند."""
+    print(msg)
+    if os.environ.get("EXPORT_FROM_BAT") != "1":
+        try:
+            input("\nبرای بستن پنجره Enter بزن...")
+        except Exception:
+            pass
+    sys.exit(1)
+
+
 try:
     import pandas as pd
 except ImportError:
-    print("پکیج pandas نصب نیست. نصب:  pip install pandas")
-    sys.exit(1)
+    _fail("پکیج pandas نصب نیست. در CMD بزن:  pip install pandas")
 try:
     import MetaTrader5 as mt5
 except ImportError:
-    print("پکیج MetaTrader5 نصب نیست. نصب:  pip install MetaTrader5")
-    sys.exit(1)
+    _fail("پکیج MetaTrader5 نصب نیست. در CMD بزن:  pip install MetaTrader5")
 
 
 def parse_date(s):
@@ -290,4 +299,13 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n⏹️ متوقف شد.")
         code = 1
+    except Exception as e:
+        print(f"\n❌ خطای غیرمنتظره: {e}")
+        code = 1
+    # اگر خود همین فایل مستقیم دابل‌کلیک شده (نه از export_data.bat)، پنجره فوراً بسته نشود
+    if os.environ.get("EXPORT_FROM_BAT") != "1":
+        try:
+            input("\nبرای بستن پنجره Enter بزن...")
+        except Exception:
+            pass
     sys.exit(code)
