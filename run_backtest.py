@@ -158,6 +158,35 @@ STABILITY_MIN_TRADES = 20   # کمتر از این تعداد در یک نیمه
 # خروجی: شیت «حذف_تک‌نماد»
 LEAVE_ONE_OUT_TEST = False
 
+# ============================================================================
+# آزمایش تغییر طراحی — هر تغییر «جداگانه» روی همان دیتا اجرا می‌شود
+# ============================================================================
+# هر ردیف یک اجرای کامل بک‌تست است (همه‌ی نمادها روی یک حساب، عین لایو) و نتیجه‌اش در
+# یک سربرگ جدا در «خلاصه_نتایج.xlsx» نوشته می‌شود؛ سربرگ «مقایسه_طراحی‌ها» همه را کنار
+# مبنا (بدون تغییر = سربرگ «خلاصه») نشان می‌دهد.
+# ⚠️ زمان‌بر: هر ردیف یک اجرای کامل. ردیفی را که نمی‌خواهی با # غیرفعال کن.
+DESIGN_TESTS = True
+DESIGN_VARIANTS = {
+    # نام سربرگ: (تنظیمات، توضیح)
+    "خروج_قوی": ({"min_departure_atr": 1.0},
+                 "فقط زونی که کندل خروجش قوی است: بدنه‌ی کندل تأیید ≥ ۱ برابر ATR"),
+    "جای_تا_زون_مخالف": ({"min_room_r": 3.0},
+                         "فاصله‌ی ورود تا نزدیک‌ترین زون مخالف (H4 یا هفتگی) ≥ ۳ برابر ریسک"),
+    "حداقل_اندازه_زون": ({"min_risk_spread": 8.0},
+                         "فاصله‌ی ورود تا استاپ ≥ ۸ برابر اسپرد نماد (زون‌های ریز حذف)"),
+    "محل_زون_تایم_بالا": ({"htf_location": True},
+                          "فقط زون ۴ساعته‌ای که روی یک زون روزانه یا هفتگیِ هم‌جهت قرار دارد"),
+    "ورود_لبه_زون": ({"entry_off": 0.0},
+                     "ورود روی لبه‌ی نزدیک زون (پراکسیمال) به‌جای وسط زون"),
+    "همه_با_هم": ({"min_departure_atr": 1.0, "min_room_r": 3.0, "min_risk_spread": 8.0,
+                   "htf_location": True, "entry_off": 0.0},
+                  "همه‌ی تغییرهای بالا با هم"),
+}
+
+# سربرگ‌های اضافه‌ی خروجی (پایداری نماد، پرتفوی، تنظیمات و ...). False = فقط «خلاصه»
+# و سربرگ‌های آزمایش طراحی نوشته می‌شوند.
+WRITE_EXTRA_SHEETS = False
+
 # فایل «جزئیات_حرفه‌ای.xlsx» ساخته بشود یا نه (False = فقط خلاصه؛ سریع‌تر)
 WRITE_DETAILS = False
 # شیت‌های ریز پرتفوی (سالانه/ماهانه) هم نوشته شوند؟ False = خروجی تمیزتر
@@ -236,6 +265,20 @@ LOSSLIMIT_MODES = {
     "3 ضرر روز / 7 هفته": (3, 7),
     "2 ضرر روز / 5 هفته": (2, 5),
     "3 ضرر روز / 5 هفته": (3, 5),
+}
+
+# اسپرد تقریبی هر نماد (برحسب قیمت) — برای هزینه، مدل Bid/Ask و فیلتر «حداقل اندازه‌ی زون».
+# ربات لایو اسپرد را به مغز نمی‌دهد (صفر)؛ فیلترها از همین جدول استفاده می‌کنند تا لایو و
+# بک‌تست یکی بمانند.
+SPREAD_TABLE = {
+    "EURUSD":0.00012, "GBPUSD":0.00018, "AUDUSD":0.00014, "NZDUSD":0.00016,
+    "USDCAD":0.00015, "USDCHF":0.00014,
+    "EURAUD":0.00025, "EURCAD":0.00022, "EURGBP":0.00018, "EURNZD":0.00025,
+    "GBPAUD":0.00030, "GBPCAD":0.00028, "GBPNZD":0.00032,
+    "AUDCAD":0.00022, "AUDNZD":0.00024, "CADJPY":0.020, "CHFJPY":0.020,
+    "EURJPY":0.020, "GBPJPY":0.025, "USDJPY":0.020, "AUDJPY":0.020,
+    "NZDCAD":0.00025,
+    "XAUUSD":0.30, "XAGUSD":0.03
 }
 
 # ------------- CSV reader (MetaTrader no header) -------------
@@ -708,7 +751,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                    max_open_per_symbol=0,
                    invalidate_on_breach=False, min_profit_margin_r=0.0, min_departure_atr=0.0,
                    retry_rejected_zones=False, return_state=False,
-                   book=None, alloc_mode=False, arm_untouched_zones=False):
+                   book=None, alloc_mode=False, arm_untouched_zones=False,
+                   min_risk_spread=0.0, min_room_r=0.0, htf_location=False):
     """موتور استراتژی برای یک نماد — به‌صورت generator.
 
     در هر کندل، درست سر جایی که ربات لایو تصمیم می‌گیرد کدام سفارش‌ها روی حساب
@@ -781,6 +825,74 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
     for idx, z in enumerate(h_z, start=1):
         z.zone_id = f"{symbol}_H4_{idx:05d}"
 
+    # ---------- فیلترهای آزمایش طراحی (پیش‌فرض همه خاموش؛ ربات لایو را عوض نمی‌کنند) ----------
+    # اسپرد مرجع برای «حداقل اندازه‌ی زون»: ربات لایو اسپرد را صفر می‌دهد، پس از جدول خوانده می‌شود
+    spread_ref = float(spread) if float(spread) > 0 else float(SPREAD_TABLE.get(symbol, 0.0))
+    risk_h = 1.0 + entry_off + sl_off            # فاصله‌ی ورود تا استاپ برحسب ارتفاع زون
+
+    # محل زون روی تایم بالاتر: برای هر زون H4، زون‌های روزانه/هفتگیِ هم‌جهتی که با آن هم‌پوشانی دارند
+    htf_overlaps = {}
+    if htf_location:
+        d_z = dedup_zones_pit(build_zones(d1, symbol, "D1", 6, d1["atr"]))
+        htf_all = [(hz, pd.Timedelta(days=1)) for hz in d_z] + [(hz, pd.Timedelta(days=7)) for hz in w_z]
+        for z in h_z:
+            htf_overlaps[id(z)] = [(hz, lag) for hz, lag in htf_all
+                                   if hz.direction == z.direction
+                                   and z.low() <= hz.high() and z.high() >= hz.low()]
+
+    def htf_ok(z, t_now):
+        """زون H4 روی یک زون روزانه/هفتگیِ هم‌جهت و معتبر (کندل تأییدش بسته شده) قرار دارد؟"""
+        for hz, lag in htf_overlaps.get(id(z), ()):
+            if hz.created_time + lag <= t_now and (hz.superseded_time is None or t_now < hz.superseded_time):
+                return True
+        return False
+
+    def room_levels(t_now, ref_price, zones_now):
+        """نزدیک‌ترین زون عرضه‌ی بالای قیمت و نزدیک‌ترین زون تقاضای زیر قیمت (H4 و هفتگی).
+        زون مخالفی که قیمت از آن عبور کرده (آن طرف قیمت است) حساب نمی‌شود."""
+        sup_low = dem_high = None
+        pool = [z2 for z2 in zones_now
+                if not z2.expired and (z2.superseded_time is None or t_now < z2.superseded_time)]
+        pool += [wz for wz in w_z if wz.created_time + pd.Timedelta(days=7) <= t_now
+                 and (wz.superseded_time is None or t_now < wz.superseded_time)]
+        for z2 in pool:
+            if z2.direction == "SELL" and z2.low() >= ref_price:
+                sup_low = z2.low() if sup_low is None else min(sup_low, z2.low())
+            elif z2.direction == "BUY" and z2.high() <= ref_price:
+                dem_high = z2.high() if dem_high is None else max(dem_high, z2.high())
+        return sup_low, dem_high
+
+    def design_block(z, levels, t_now):
+        """فیلترهای جدید طراحی؛ خروجی None = قبول، وگرنه کلید دلیل رد."""
+        height = z.high() - z.low()
+        risk = height * risk_h
+        if min_risk_spread > 0 and spread_ref > 0 and risk < min_risk_spread * spread_ref:
+            return "رد_به_خاطر_استاپ_کوچک_نسبت_به_اسپرد"
+        if htf_location and not htf_ok(z, t_now):
+            return "رد_به_خاطر_محل_زون_تایم_بالا"
+        if min_room_r > 0 and levels is not None:
+            sup_low, dem_high = levels
+            if z.direction == "BUY":
+                ent = z.proximal + entry_off * height
+                if sup_low is not None and sup_low - ent < min_room_r * risk:
+                    return "رد_به_خاطر_جای_کم_تا_زون_مخالف"
+            else:
+                ent = z.proximal - entry_off * height
+                if dem_high is not None and ent - dem_high < min_room_r * risk:
+                    return "رد_به_خاطر_جای_کم_تا_زون_مخالف"
+        return None
+
+    def armed_quality_ok(z, levels, t_now, atr_ref):
+        """فیلترهای کیفیت برای زون‌های لمس‌نشده‌ای که از قبل سفارش می‌گیرند
+        (قبلاً فیلترهای کیفیت فقط روی زون‌های لمس‌شده اعمال می‌شد و سفارش‌های از پیش
+        چیده بدون فیلتر پر می‌شدند). حاشیه‌ی سود (min_profit_margin_r) اینجا حساب نمی‌شود
+        چون قبل از لمس، بخشی از آن از آینده می‌آید."""
+        if min_departure_atr > 0 and z.conf_body_atr < min_departure_atr:
+            return False
+        if min_risk_atr > 0 and (pd.isna(atr_ref) or (z.high() - z.low()) * risk_h < min_risk_atr * float(atr_ref)):
+            return False
+        return design_block(z, levels, t_now) is None
+
     zone_df = init_zone_table(h_z)
     z_idx = zone_row_index(zone_df)          # ZoneID → شماره‌ی سطر (جست‌وجوی O(1))
     _zcols = {cname: k for k, cname in enumerate(zone_df.columns)}
@@ -828,6 +940,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         "TP_کندل_ورود_بدون_M15": 0,
         "تعویق_سفارش_لمس_همین_کندل": 0,
         "رد_به_خاطر_عبور_قیمت_از_ورود": 0,
+        "رد_به_خاطر_استاپ_کوچک_نسبت_به_اسپرد": 0,
+        "رد_به_خاطر_محل_زون_تایم_بالا": 0,
+        "رد_به_خاطر_جای_کم_تا_زون_مخالف": 0,
     }
 
     # اسپرد (برحسب قیمت) برای مدل Bid/Ask: خرید لیمیت با Ask پر می‌شود و فروش با Ask بسته می‌شود
@@ -1169,6 +1284,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         if any(z.expired for z in live_zones):
             live_zones = [z for z in live_zones if not z.expired]
 
+        # سطح نزدیک‌ترین زون‌های مخالف برای «جای تا زون مخالف» — یک بار در هر کندل
+        levels = room_levels(t, o, live_zones) if min_room_r > 0 else None
+
         candidates = []
         for z in live_zones:
             if id(z) in used:
@@ -1244,6 +1362,14 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                     log_event(events, t, symbol, z.zone_id, "Rejected", "SmallZone")
                     used.add(id(z)); continue
 
+            # فیلترهای آزمایش طراحی (اندازه‌ی زون نسبت به اسپرد، محل روی تایم بالا، جای تا زون مخالف)
+            _why = design_block(z, levels, t)
+            if _why:
+                reasons[_why] += 1
+                set_final(zone_df, z.zone_id, "رد شد", _why.replace("_", " "), t, idx=z_idx)
+                log_event(events, t, symbol, z.zone_id, "Rejected", _why)
+                used.add(id(z)); continue
+
             # عین ربات: اگر قیمتِ لحظه‌ی ثبت (باز شدن کندل) از نقطه‌ی ورود رد شده باشد، سفارش
             # لیمیت معنا ندارد؛ زون سهمیه نمی‌گیرد و برای کندل‌های بعد (اگر قیمت برگشت) می‌ماند.
             if NO_SAME_BAR_TOUCH_FILL:
@@ -1277,6 +1403,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 if any(body_overlaps_zone(o_prev, c_prev, wz) for wz in wz_arm if wz.direction == opp_dir):
                     continue
                 if z.high() - z.low() <= 0:
+                    continue
+                if not armed_quality_ok(z, levels, t, _h4_atr_a[i-1]):
                     continue
                 armed_cands.append((z, 1))
             armed_cands.sort(key=lambda zc: abs(c - zc[0].proximal))
@@ -1573,6 +1701,11 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                     blockers.append(f"روند روزانه {trend_txt.get(dtr_now)} ولی ۴ساعته {trend_txt.get(htr_now)} (ناهم‌جهت)")
             state["دلیل_نبود"] = " + ".join(blockers) if blockers else "فیلترها سبزند"
 
+            # فیلترهای آزمایش طراحی برای لحظه‌ی «همین الان» (اگر روشن باشند)
+            atr_last = float(h4["atr"].iloc[-1]) if "atr" in h4.columns else float("nan")
+            zones_now_last = [z for z in h_z if z.created_time < t_last and not z.expired]
+            levels_last = room_levels(t_last, c_last, zones_now_last) if min_room_r > 0 else None
+
             if not NO_SAME_BAR_TOUCH_FILL:
                 pass   # رفتار قدیمی: فقط سفارش‌های ثبت‌شده‌ی بازپخش + زون‌های مسلح
             elif not filters_ok:
@@ -1587,7 +1720,6 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 wz_c = [wz for wz in w_z
                         if wz.created_time + pd.Timedelta(days=7) <= t_last
                         and (wz.superseded_time is None or t_last < wz.superseded_time)]
-                atr_last = float(h4["atr"].iloc[-1]) if "atr" in h4.columns else float("nan")
                 cands_next = []
                 for z in h_z:
                     if z.created_time >= t_last or z.expired or id(z) in used:
@@ -1608,6 +1740,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                         continue
                     if min_risk_atr > 0 and (pd.isna(atr_last) or
                                              height * (1.0 + entry_off + sl_off) < min_risk_atr * atr_last):
+                        continue
+                    if design_block(z, levels_last, t_last):
                         continue
                     if z.direction == "BUY":
                         entry = z.proximal + entry_off * height
@@ -1648,6 +1782,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                         continue
                     height = z.high() - z.low()
                     if height <= 0:
+                        continue
+                    if not armed_quality_ok(z, levels_last, t_last, atr_last):
                         continue
                     if z.direction == "BUY":
                         entry = z.proximal + entry_off * height
@@ -2272,6 +2408,75 @@ def live_book_report(book, trades_df, alloc_df=None):
             "monthly": _period_returns("M").rename(columns={"دوره": "ماه"})}
 
 
+def _design_trades(results):
+    tr = [r[2] for r in results.values() if r[2] is not None and not r[2].empty]
+    return pd.concat(tr, ignore_index=True) if tr else pd.DataFrame(columns=["نتیجه_R", "زمان_ورود"])
+
+
+def _pf(r):
+    win = float(r[r > 0].sum())
+    los = float(r[r < 0].abs().sum())
+    return round(win / los, 3) if los > 0 else 999.0
+
+
+def design_symbol_table(results, book):
+    """جدول نمادها برای سربرگ هر آزمایش — همان ستون‌های سربرگ «خلاصه» + ردیف «کل»."""
+    rows = []
+    for sym, r in results.items():
+        m = r[0].iloc[0]
+        rows.append({"نماد": sym, "تعداد": int(m["تعداد"]), "درصد_برد": m["درصد_برد"],
+                     "فاکتور_سود": m["فاکتور_سود"], "میانگین_R": m["میانگین_R"],
+                     "سهم_از_بازده_حساب٪": m["بازده_خالص٪"], "افت_سهم_این_نماد٪": m["حداکثر_افت٪"]})
+    tr = _design_trades(results)
+    R = tr["نتیجه_R"].astype(float)
+    rows.append({"نماد": "کل", "تعداد": int(len(R)),
+                 "درصد_برد": round(float((R > 0).mean() * 100.0), 2) if len(R) else 0.0,
+                 "فاکتور_سود": _pf(R), "میانگین_R": round(float(R.mean()), 3) if len(R) else 0.0,
+                 "سهم_از_بازده_حساب٪": round((book.equity / book.start_equity - 1.0) * 100.0, 2),
+                 "افت_سهم_این_نماد٪": round(book.max_dd * 100.0, 2)})
+    return pd.DataFrame(rows)
+
+
+def design_compare_row(name, results, book, mid_t, desc):
+    """یک ردیف برای سربرگ «مقایسه_طراحی‌ها». نیمه‌ی اول/دوم برای دیدن اینکه بهبود واقعی است
+    یا فقط در یک دوره‌ی خوش‌شانس بوده."""
+    tr = _design_trades(results)
+    R = tr["نتیجه_R"].astype(float)
+    t_in = pd.to_datetime(tr["زمان_ورود"])
+    ret = (book.equity / book.start_equity - 1.0) * 100.0
+    dd = book.max_dd * 100.0
+    return {"طراحی": name, "تعداد_معامله": int(len(R)),
+            "درصد_برد": round(float((R > 0).mean() * 100.0), 2) if len(R) else 0.0,
+            "فاکتور_سود": _pf(R), "میانگین_R": round(float(R.mean()), 3) if len(R) else 0.0,
+            "بازده_کل_حساب٪": round(ret, 2), "بیشترین_افت٪": round(dd, 2),
+            "بازده_به_افت": round(ret / dd, 2) if dd > 0 else None,
+            "جمع_R_نیمه_اول": round(float(R[t_in < mid_t].sum()), 1),
+            "جمع_R_نیمه_دوم": round(float(R[t_in >= mid_t].sum()), 1),
+            "توضیح": desc}
+
+
+def design_verdicts(rows):
+    """حکم ساده برای هر آزمایش در برابر مبنا (ردیف اول)."""
+    if not rows:
+        return rows
+    base = rows[0]
+    base["اختلاف_بازده_با_مبنا٪"] = 0.0
+    base["حکم"] = "مبنا"
+    for r in rows[1:]:
+        r["اختلاف_بازده_با_مبنا٪"] = round(r["بازده_کل_حساب٪"] - base["بازده_کل_حساب٪"], 2)
+        h1, h2 = r["جمع_R_نیمه_اول"], r["جمع_R_نیمه_دوم"]
+        better_both = h1 > base["جمع_R_نیمه_اول"] and h2 > base["جمع_R_نیمه_دوم"]
+        if r["بازده_کل_حساب٪"] > 0 and h1 > 0 and h2 > 0:
+            r["حکم"] = "✅ سودده در هر دو نیمه"
+        elif better_both:
+            r["حکم"] = "➕ بهتر از مبنا در هر دو نیمه (ولی هنوز سودده نیست)"
+        elif r["بازده_کل_حساب٪"] > base["بازده_کل_حساب٪"]:
+            r["حکم"] = "⚠️ بهتر از مبنا ولی فقط در یک نیمه — قابل اعتماد نیست"
+        else:
+            r["حکم"] = "❌ بدتر از مبنا"
+    return rows
+
+
 def stability_split_test(trades_df, min_trades=None):
     """تست پایداری: کارنامه‌ی هر نماد در نیمه‌ی اول در برابر نیمه‌ی دوم بازه.
 
@@ -2404,17 +2609,8 @@ def main():
 
     years = None  # از 2023 تا پایان داده، به‌صورت پویا محاسبه می‌شود
 
-    # Spread estimates (edit if needed)
-    spreads = {
-        "EURUSD":0.00012, "GBPUSD":0.00018, "AUDUSD":0.00014, "NZDUSD":0.00016,
-        "USDCAD":0.00015, "USDCHF":0.00014,
-        "EURAUD":0.00025, "EURCAD":0.00022, "EURGBP":0.00018, "EURNZD":0.00025,
-        "GBPAUD":0.00030, "GBPCAD":0.00028, "GBPNZD":0.00032,
-        "AUDCAD":0.00022, "AUDNZD":0.00024, "CADJPY":0.020, "CHFJPY":0.020,
-        "EURJPY":0.020, "GBPJPY":0.025, "USDJPY":0.020, "AUDJPY":0.020,
-        "NZDCAD":0.00025, "NZDUSD":0.00016,
-        "XAUUSD":0.30, "XAGUSD":0.03
-    }
+    # Spread estimates (edit if needed) — جدولش بالای فایل است (SPREAD_TABLE)
+    spreads = dict(SPREAD_TABLE)
 
     changes = [
         "نماد EURUSD به‌دلیل دراودان بالا حذف شد و نماد GBPJPY اضافه شد.",
@@ -2517,6 +2713,32 @@ def main():
         print(f"   اکویتی پایانی: {live_book.equity:,.0f} | "
               f"بازده {(live_book.equity/live_book.start_equity-1)*100:.2f}٪ | "
               f"حداکثر افت {live_book.max_dd*100:.2f}٪")
+
+    # --- آزمایش تغییر طراحی: هر تغییر جداگانه، روی همان دیتا و همان حساب «عین لایو» ---
+    design_sheets, design_rows = [], []
+    if DESIGN_TESTS and LIVE_MODE and live_book is not None and DESIGN_VARIANTS:
+        _t0 = max(pd.Timestamp(d0), BACKTEST_START) if _starts else BACKTEST_START
+        mid_t = _t0 + (pd.Timestamp(d1_) - _t0) / 2 if _starts else BACKTEST_START
+        design_rows.append(design_compare_row("مبنا (بدون تغییر = سربرگ خلاصه)", live_results, live_book,
+                                              mid_t, "استراتژی فعلی بدون هیچ فیلتر جدید"))
+        n_var = len(DESIGN_VARIANTS)
+        print(f"\n🧪 آزمایش تغییر طراحی: {n_var} اجرای کامل دیگر (هر کدام جدا) — مرز دو نیمه: {mid_t.date()}")
+        for k, (name, (kw, desc)) in enumerate(DESIGN_VARIANTS.items(), start=1):
+            print(f"   [{k}/{n_var}] {name}: {desc} ...", flush=True)
+            call = dict(entry_off=DEFAULT_ENTRY_OFF, sl_off=DEFAULT_SL_OFF, rr=DEFAULT_RR,
+                        manage_mode=DEFAULT_MANAGE, min_risk_atr=DEFAULT_MIN_RISK_ATR)
+            call.update(kw)
+            try:
+                res_v, book_v, _al = portfolio_live_replay(frames, spreads, **call)
+            except Exception as e:
+                print(f"   ⚠️ آزمایش {name} ناموفق بود: {e}")
+                continue
+            design_sheets.append((name, desc, design_symbol_table(res_v, book_v)))
+            row = design_compare_row(name, res_v, book_v, mid_t, desc)
+            design_rows.append(row)
+            print(f"        بازده {row['بازده_کل_حساب٪']:.2f}٪ | افت {row['بیشترین_افت٪']:.2f}٪ | "
+                  f"برد {row['درصد_برد']:.1f}٪ | معامله {row['تعداد_معامله']}")
+        design_rows = design_verdicts(design_rows)
 
     for symbol, (h4, d1, w1, m15) in frames.items():
         if LIVE_MODE:
@@ -2822,7 +3044,7 @@ def main():
         # --- شبیه‌سازی حساب مشترک (پرتفوی) ---
         # --- تست پایداری نمادها (نیمه‌ی اول در برابر نیمه‌ی دوم) ---
         stab_out = None
-        if STABILITY_TEST:
+        if STABILITY_TEST and WRITE_EXTRA_SHEETS:
             try:
                 stab_out = stability_split_test(trades_df)
                 if stab_out is not None:
@@ -2929,49 +3151,64 @@ def main():
 
         with pd.ExcelWriter(summary_path, engine="openpyxl") as sw:
             summary_out.to_excel(sw, sheet_name="خلاصه", index=False)
-            pd.DataFrame([
-                {"تنظیم": "ENTRY_BAR_MODE (کندل ورود)", "مقدار": ENTRY_BAR_MODE},
-                {"تنظیم": "NO_SAME_BAR_TOUCH_FILL (سفارش از کندل بعد از لمس)", "مقدار": NO_SAME_BAR_TOUCH_FILL},
-                {"تنظیم": "MODEL_BID_ASK (اسپرد در پر شدن و خروج)", "مقدار": MODEL_BID_ASK},
-                {"تنظیم": "دیتای تایم پایین‌تر", "مقدار": "ندارد" if (not USE_M15 or no_ltf) else "دارد"},
-            ]).to_excel(sw, sheet_name="تنظیمات_واقع_بینی", index=False)
-            if stab_out is not None:
-                stab_out.to_excel(sw, sheet_name="پایداری_نماد", index=False)
-            if loo_out is not None:
-                loo_out.to_excel(sw, sheet_name="حذف_تک‌نماد", index=False)
-            if cmp_out is not None:
-                cmp_out.to_excel(sw, sheet_name="مقایسه_نقطه_ورود", index=False)
-            if rr_out is not None:
-                rr_out.to_excel(sw, sheet_name="مقایسه_RR", index=False)
-            if mr_out is not None:
-                mr_out.to_excel(sw, sheet_name="مقایسه_حداقل_زون", index=False)
-            if dc_out is not None:
-                dc_out.to_excel(sw, sheet_name="مقایسه_لغو_دور", index=False)
-            if mg_out is not None:
-                mg_out.to_excel(sw, sheet_name="مقایسه_مدیریت", index=False)
-            if sl_out is not None:
-                sl_out.to_excel(sw, sheet_name="مقایسه_استاپ", index=False)
-            if q_out is not None:
-                q_out.to_excel(sw, sheet_name="مقایسه_کیفیت_زون", index=False)
-            if sw_out is not None:
-                sw_out.to_excel(sw, sheet_name="مقایسه_وزن_سشن", index=False)
-            if sess_out is not None:
-                sess_out.to_excel(sw, sheet_name="تحلیل_سشن", index=False)
-                hour_out.to_excel(sw, sheet_name="تحلیل_ساعت_خام", index=False)
-                sesssym_out.to_excel(sw, sheet_name="سشن_هر_نماد", index=False)
-                if SESSION_STABILITY:
-                    stab = session_stability(trades_df)
-                    if stab is not None:
-                        stab.to_excel(sw, sheet_name="پایداری_سشن", index=False)
-            if port is not None:
-                port["stats"].to_excel(sw, sheet_name="پرتفوی", index=False)
-                if WRITE_PORTFOLIO_DETAIL:
-                    port["yearly"].to_excel(sw, sheet_name="پرتفوی_سالانه", index=False)
-                    port["monthly"].to_excel(sw, sheet_name="پرتفوی_ماهانه", index=False)
-            if ec_out is not None:
-                ec_out.to_excel(sw, sheet_name="مقایسه_سقف_اجرا", index=False)
-            if ll_out is not None:
-                ll_out.to_excel(sw, sheet_name="مقایسه_محدودیت_ضرر", index=False)
+            # آزمایش‌های طراحی: یک سربرگ مقایسه + یک سربرگ برای هر آزمایش
+            if design_rows:
+                pd.DataFrame(design_rows).to_excel(sw, sheet_name="مقایسه_طراحی‌ها", index=False)
+                for _nm, _desc, _tbl in design_sheets:
+                    _sh = str(_nm)[:31]
+                    pd.DataFrame([{"آزمایش": _nm, "توضیح": _desc}]).to_excel(sw, sheet_name=_sh, index=False)
+                    _tbl.to_excel(sw, sheet_name=_sh, index=False, startrow=3)
+            # سربرگ‌های اضافه (پایداری، پرتفوی، مقایسه‌های قدیمی، ...) فقط اگر خواسته شود
+            if WRITE_EXTRA_SHEETS:
+                pd.DataFrame([
+                    {"تنظیم": "ENTRY_BAR_MODE (کندل ورود)", "مقدار": ENTRY_BAR_MODE},
+                    {"تنظیم": "NO_SAME_BAR_TOUCH_FILL (سفارش از کندل بعد از لمس)", "مقدار": NO_SAME_BAR_TOUCH_FILL},
+                    {"تنظیم": "MODEL_BID_ASK (اسپرد در پر شدن و خروج)", "مقدار": MODEL_BID_ASK},
+                    {"تنظیم": "دیتای تایم پایین‌تر", "مقدار": "ندارد" if (not USE_M15 or no_ltf) else "دارد"},
+                ]).to_excel(sw, sheet_name="تنظیمات_واقع_بینی", index=False)
+                if stab_out is not None:
+                    stab_out.to_excel(sw, sheet_name="پایداری_نماد", index=False)
+                if loo_out is not None:
+                    loo_out.to_excel(sw, sheet_name="حذف_تک‌نماد", index=False)
+                if cmp_out is not None:
+                    cmp_out.to_excel(sw, sheet_name="مقایسه_نقطه_ورود", index=False)
+                if rr_out is not None:
+                    rr_out.to_excel(sw, sheet_name="مقایسه_RR", index=False)
+                if mr_out is not None:
+                    mr_out.to_excel(sw, sheet_name="مقایسه_حداقل_زون", index=False)
+                if dc_out is not None:
+                    dc_out.to_excel(sw, sheet_name="مقایسه_لغو_دور", index=False)
+                if mg_out is not None:
+                    mg_out.to_excel(sw, sheet_name="مقایسه_مدیریت", index=False)
+                if sl_out is not None:
+                    sl_out.to_excel(sw, sheet_name="مقایسه_استاپ", index=False)
+                if q_out is not None:
+                    q_out.to_excel(sw, sheet_name="مقایسه_کیفیت_زون", index=False)
+                if sw_out is not None:
+                    sw_out.to_excel(sw, sheet_name="مقایسه_وزن_سشن", index=False)
+                if sess_out is not None:
+                    sess_out.to_excel(sw, sheet_name="تحلیل_سشن", index=False)
+                    hour_out.to_excel(sw, sheet_name="تحلیل_ساعت_خام", index=False)
+                    sesssym_out.to_excel(sw, sheet_name="سشن_هر_نماد", index=False)
+                    if SESSION_STABILITY:
+                        stab = session_stability(trades_df)
+                        if stab is not None:
+                            stab.to_excel(sw, sheet_name="پایداری_سشن", index=False)
+                if port is not None:
+                    port["stats"].to_excel(sw, sheet_name="پرتفوی", index=False)
+                    if WRITE_PORTFOLIO_DETAIL:
+                        port["yearly"].to_excel(sw, sheet_name="پرتفوی_سالانه", index=False)
+                        port["monthly"].to_excel(sw, sheet_name="پرتفوی_ماهانه", index=False)
+                if ec_out is not None:
+                    ec_out.to_excel(sw, sheet_name="مقایسه_سقف_اجرا", index=False)
+                if ll_out is not None:
+                    ll_out.to_excel(sw, sheet_name="مقایسه_محدودیت_ضرر", index=False)
+            # راست‌به‌چپ و عرض ستون‌ها برای خوانایی
+            for _ws in sw.book.worksheets:
+                _ws.sheet_view.rightToLeft = True
+                for _col in _ws.columns:
+                    _w = max((len(str(_c.value)) for _c in _col[:300] if _c.value is not None), default=8)
+                    _ws.column_dimensions[_col[0].column_letter].width = min(max(10, _w * 1.1), 70)
 
         # --- خروجی نهایی (جزئیات کامل) — فقط اگر WRITE_DETAILS روشن باشد ---
         if WRITE_DETAILS:
@@ -2991,11 +3228,12 @@ def main():
                     ddf.to_excel(writer, sheet_name=safe_name, index=False)
             print("جزئیات_حرفه‌ای.xlsx ساخته شد ✅")
     except Exception as e:
-        print("⚠️ ساخت جزئیات_حرفه‌ای.xlsx ناموفق بود:", str(e))
+        print("⚠️ ساخت فایل خروجی ناموفق بود:", str(e))
 
     print("تمام شد ✅")
     print("خلاصه_نتایج.xlsx ساخته شد ✅ |", summary_path)
-    print("جزئیات_حرفه‌ای.xlsx ساخته شد ✅ |", detailed_path)
+    if WRITE_DETAILS:
+        print("جزئیات_حرفه‌ای.xlsx ساخته شد ✅ |", detailed_path)
     print("مسیر خروجی:", outdir)
 
 if __name__ == "__main__":
