@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
-"""بکتستر کلاسیک روی کل ۲ سال دیتا: نسخه‌ی اصلی در برابر «کندل ورود بدبینانه»."""
+"""بکتستر روی کل ۲ سال دیتا: رفتار قبل از اصلاح در برابر اصلاح «کندل ورود» (بقیه‌ی کلیدها خاموش،
+تا فقط اثر همین یک فرض دیده شود)."""
 import os, sys, pickle
 import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(os.path.dirname(HERE))          # پوشه‌ی اصلی پروژه
+REPO = os.path.dirname(HERE)                             # پوشه‌ی اصلی پروژه
 CACHE = os.path.join(HERE, "_cache")                     # خروجی‌های میانی
 os.makedirs(CACHE, exist_ok=True)
 sys.path.insert(0, REPO)
 sys.path.insert(0, HERE)
-import make_rb_pess
-make_rb_pess.build()
-import rb_pess as rb
+import run_backtest as rb
 from emulate import SPREADS, BASKET
 
 frames = {}
@@ -22,8 +21,10 @@ for s in BASKET:
     frames[s] = (h4, d1, w1, None)
 rb.BACKTEST_START = pd.Timestamp("2019-01-01"); rb.BACKTEST_END = None; rb.USE_M15 = False
 out = {}
+rb.NO_SAME_BAR_TOUCH_FILL, rb.MODEL_BID_ASK = False, False
+MODES = {False: "optimistic", "mid": "path", True: "pessimistic"}
 for pess in (False, "mid", True):
-    rb.PESS_ENTRY_BAR = pess
+    rb.ENTRY_BAR_MODE = MODES[pess]
     res, book, alloc = rb.portfolio_live_replay(frames, SPREADS, entry_off=rb.DEFAULT_ENTRY_OFF, sl_off=rb.DEFAULT_SL_OFF,
                                                 rr=rb.DEFAULT_RR, manage_mode=rb.DEFAULT_MANAGE)
     tr = pd.concat([r[2] for r in res.values() if r[2] is not None and not r[2].empty], ignore_index=True)

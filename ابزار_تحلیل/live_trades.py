@@ -4,7 +4,7 @@ import os, re
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(os.path.dirname(HERE))          # پوشه‌ی اصلی پروژه
+REPO = os.path.dirname(HERE)                             # پوشه‌ی اصلی پروژه
 CACHE = os.path.join(HERE, "_cache")                     # خروجی‌های میانی
 os.makedirs(CACHE, exist_ok=True)
 PIP = {"XAUUSD": 0.1, "AUDJPY": 0.01, "CHFJPY": 0.01, "GBPJPY": 0.01}

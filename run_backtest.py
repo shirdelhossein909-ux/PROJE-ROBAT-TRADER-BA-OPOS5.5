@@ -6,10 +6,41 @@ import numpy as np
 from analysis_distribution import distribution_sheets
 import pandas as pd
 
-# استفاده از M15 برای رفع ابهام داخل کندل — طبق تصمیم: خاموش.
-# معاملات مبهم (TP و استاپ در یک کندل H4) بدبینانه استاپ حساب می‌شوند
-# و تعداد/اثرشان در ستون‌های «مبهم_...» گزارش می‌شود.
-USE_M15 = False
+# ============================================================================
+# واقع‌بینی بک‌تست (اصلاح خوش‌بینی‌ها — بعد از مقایسه با ۶ هفته لایو)
+# ============================================================================
+# بک‌تستر فقط کندل ۴ساعته را می‌بیند و ترتیب اتفاقات داخل کندل را نمی‌داند.
+# نسخه‌ی قبلی دو فرض خوش‌بینانه داشت که تقریباً کل سود بک‌تست از آن‌ها می‌آمد:
+#   ۱) در کندلی که سفارش پر می‌شد، فرض می‌کرد سقف/کفِ همان کندل «بعد از» پر شدن بوده
+#      → سیو سود 2R یا تارگتی که در واقعیت قبل از ورود اتفاق افتاده بود، ثبت می‌شد.
+#   ۲) زونی که در همین کندل لمس می‌شد، در همین کندل سفارش می‌گرفت و پر می‌شد؛
+#      در حالی که ربات لایو لمس را فقط بعد از بسته شدن کندل می‌فهمد.
+# مقایسه با لایو (۱۴ آگوست تا ۲۵ سپتامبر ۲۰۲۶): روش قدیم نتیجه‌ی ۲۶ از ۳۳ معامله را
+# درست پیش‌بینی کرد و روش واقع‌بینانه ۳۱ از ۳۳.
+
+# نحوه‌ی حساب کردن «کندل ورود» وقتی دیتای تایم‌فریم پایین‌تر نیست:
+#   "path"        → مسیر کندل از رنگش: صعودی O→L→H→C ، نزولی O→H→L→C (فرض رایج تسترها برای کندل OHLC)
+#   "pessimistic" → در کندل ورود فقط «کلوز» برای سیو سود/تارگت قابل اتکاست
+#   "optimistic"  → رفتار قدیمی (فقط برای مقایسه — نتیجه‌اش قابل اعتماد نیست)
+ENTRY_BAR_MODE = "path"
+
+# زمان‌بندی ثبت سفارش مثل ربات لایو:
+#   - زونی که در همین کندل لمس شده، از کندل بعد سفارش می‌گیرد (زون‌های لمس‌نشده‌ای که از قبل
+#     «مسلح» شده‌اند سفارششان از قبل روی حساب است و عوض نمی‌شوند).
+#   - اگر لحظه‌ی ثبت (باز شدن کندل) قیمت از نقطه‌ی ورود رد شده باشد، سفارش لیمیت گذاشته نمی‌شود
+#     (ربات هم در این حالت سفارش نمی‌گذارد) و زون برای کندل‌های بعد می‌ماند.
+NO_SAME_BAR_TOUCH_FILL = True
+
+# دیتا فقط قیمت Bid است. خرید لیمیت وقتی پر می‌شود که Ask برسد و حد ضرر/سود فروش با Ask
+# اجرا می‌شود. True = اسپرد هر نماد (جدول spreads در main) در پر شدن و خروج اعمال شود.
+# (کمیسیون جداگانه با COMMISSION_SPREAD_MULT کم می‌شود.)
+MODEL_BID_ASK = True
+
+# دیتای تایم‌فریم پایین‌تر برای دیدن ترتیب واقعی اتفاقات داخل کندل ۴ساعته.
+# اگر داخل ZIP هر نماد فایل «-1.csv» یا «-5.csv» یا «-15.csv» (یا M1/M5/M15) باشد، ریزترینش
+# خوانده می‌شود و پر شدن، سیو سود، استاپ و تارگت کندل‌به‌کندل روی آن شبیه‌سازی می‌شود.
+# اگر نباشد، ENTRY_BAR_MODE استفاده می‌شود. (نام متغیر به‌خاطر سازگاری همان USE_M15 مانده)
+USE_M15 = True
 
 # بازه‌ی بک‌تست: در صورت نیاز این دو خط را تغییر بده.
 # اگر این تاریخ از شروع دیتا قدیمی‌تر باشد، خودکار روی شروع واقعی دیتا تنظیم می‌شود،
@@ -300,7 +331,12 @@ def load_timeframes_from_zip(zip_path: str):
         f240_list = [n for n in names if n.endswith("-240.csv")]
         f1d_list  = [n for n in names if n.endswith("-1D.csv")]
         f1w_list  = [n for n in names if n.endswith("-1W.csv")]
-        f15_list  = [n for n in names if n.endswith("-15.csv") or n.endswith("-M15.csv")]  # اختیاری
+        # تایم‌فریم پایین‌تر (اختیاری) — ریزترینِ موجود: M1، بعد M5، بعد M15
+        f15_list = []
+        for suf in ("1", "5", "15"):
+            f15_list = [n for n in names if n.endswith(f"-{suf}.csv") or n.endswith(f"-M{suf}.csv")]
+            if f15_list:
+                break
 
         if not f240_list or not f1d_list or not f1w_list:
             raise ValueError(
@@ -785,18 +821,26 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         "انقضا_زون": 0,
         "جایگزینی_زون": 0,
         "ورود_انجام_شد": 0,
-        "خروج_همزمان_حل_با_M15": 0,
         "خروج_همزمان_بدون_M15_استاپ_فرض": 0,
-        "کندل_ورود_حل_با_M15": 0,
+        "کندل_ورود_با_تایم_پایین": 0,
+        "کندل_ورود_با_حدس_مسیر": 0,
+        "کندل_های_حل_شده_با_تایم_پایین": 0,
         "TP_کندل_ورود_بدون_M15": 0,
+        "تعویق_سفارش_لمس_همین_کندل": 0,
+        "رد_به_خاطر_عبور_قیمت_از_ورود": 0,
     }
 
-    # --- آماده‌سازی M15 برای رفع ابهام داخل کندل H4 ---
-    m15_t = m15_h = m15_l = None
+    # اسپرد (برحسب قیمت) برای مدل Bid/Ask: خرید لیمیت با Ask پر می‌شود و فروش با Ask بسته می‌شود
+    spr = float(spread) if MODEL_BID_ASK else 0.0
+
+    # --- آماده‌سازی تایم‌فریم پایین‌تر (M1/M5/M15) برای دیدن ترتیب اتفاقات داخل کندل H4 ---
+    m15_t = m15_o = m15_h = m15_l = m15_c = None
     if USE_M15 and m15 is not None and not m15.empty:
         m15_t = m15["time"].values
+        m15_o = m15["open"].astype(float).values
         m15_h = m15["high"].astype(float).values
         m15_l = m15["low"].astype(float).values
+        m15_c = m15["close"].astype(float).values
 
     H4_SPAN = np.timedelta64(4, "h")
 
@@ -810,50 +854,66 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             return None
         return i0, i1
 
-    def resolve_both_hit_m15(direction, sl, tp, t_bar):
-        """وقتی در یک کندل H4 هم استاپ و هم حدسود لمس شده،
-        با M15 مشخص می‌کند کدام اول بوده. اگر هر دو در یک کندل M15 بود: بدبینانه استاپ."""
-        rng = _m15_range(t_bar)
-        if rng is None:
-            return None
-        for j in range(rng[0], rng[1]):
-            hi = m15_h[j]; lo = m15_l[j]
-            if direction == "BUY":
-                if lo <= sl: return "sl"
-                if hi >= tp: return "tp"
-            else:
-                if hi >= sl: return "sl"
-                if lo <= tp: return "tp"
-        return None
+    def entry_bar_fav(direction, entry, o_, h_, l_, c_):
+        """بهترین قیمتی که «بعد از پر شدن» در کندل ورود می‌شود رویش حساب کرد.
 
-    def resolve_entry_candle_m15(direction, entry, sl, tp, t_bar):
-        """در کندل ورود: اول لحظه‌ی پر شدن سفارش را در M15 پیدا می‌کند،
-        بعد فقط اتفاقات بعد از آن را می‌شمارد (سقف/کف قبل از ورود حساب نمی‌شود).
-        در خودِ کندلِ پر شدن فقط استاپ پذیرفته می‌شود (بدبینانه).
-        خروجی: sl / tp / open / nofill / None(=M15 نیست)"""
+        سفارش لیمیت وقتی پر می‌شود که قیمت خلاف جهت معامله به ورود برسد؛ پس سقف
+        (برای خرید) یا کف (برای فروش) کندل ممکن است قبل از پر شدن بوده باشد.
+          path: صعودی O→L→H→C ، نزولی O→H→L→C  |  pessimistic: فقط کلوز  |  optimistic: کل کندل
+        """
+        if ENTRY_BAR_MODE == "optimistic":
+            return None
+        if direction == "BUY":
+            if ENTRY_BAR_MODE == "path" and c_ >= o_:
+                return h_                      # اول کف (پر شدن) بعد سقف
+            return max(c_, entry)              # سقف قبل از پر شدن بوده؛ بعدش فقط تا کلوز
+        if ENTRY_BAR_MODE == "path" and c_ <= o_:
+            return l_                          # اول سقف (پر شدن) بعد کف
+        return min(c_, entry)
+
+    def walk_lower_tf(pos, t_bar, entry_bar):
+        """یک کندل H4 را روی کندل‌های تایم‌فریم پایین‌تر جلو می‌برد.
+        خروجی مثل process_pos_candle؛ None یعنی دیتای پایین‌تر برای این کندل نیست
+        (یا در کندل ورود، لحظه‌ی پر شدن در آن پیدا نشد) و باید از خود H4 استفاده شود."""
         rng = _m15_range(t_bar)
         if rng is None:
             return None
-        filled = False
-        for j in range(rng[0], rng[1]):
-            hi = m15_h[j]; lo = m15_l[j]
-            if not filled:
-                if direction == "BUY" and lo <= entry:
-                    filled = True
-                    if lo <= sl:
-                        return "sl"
-                elif direction == "SELL" and hi >= entry:
-                    filled = True
-                    if hi >= sl:
-                        return "sl"
-                continue
-            if direction == "BUY":
-                if lo <= sl: return "sl"
-                if hi >= tp: return "tp"
-            else:
-                if hi >= sl: return "sl"
-                if lo <= tp: return "tp"
-        return "open" if filled else "nofill"
+        j0 = rng[0]
+        if entry_bar:
+            ent = pos["eff_entry"]
+            jf = None
+            for j in range(rng[0], rng[1]):
+                if (pos["direction"] == "BUY" and m15_l[j] + spr <= ent) or \
+                   (pos["direction"] == "SELL" and m15_h[j] >= ent):
+                    jf = j
+                    break
+            if jf is None:
+                return None
+            fav = entry_bar_fav(pos["direction"], ent, m15_o[jf], m15_h[jf], m15_l[jf], m15_c[jf])
+            ex = process_pos_candle(pos, m15_h[jf], m15_l[jf], t_bar, fav=fav)
+            if ex[0]:
+                return ex
+            j0 = jf + 1
+        for j in range(j0, rng[1]):
+            ex = process_pos_candle(pos, m15_h[j], m15_l[j], t_bar)
+            if ex[0]:
+                return ex
+        return False, None, None
+
+    def step_position(pos, o_, h_, l_, c_, t_bar, entry_bar=False):
+        """خروج/مدیریت یک پوزیشن در یک کندل H4 — با تایم پایین اگر باشد، وگرنه H4."""
+        if m15_t is not None:
+            ex = walk_lower_tf(pos, t_bar, entry_bar)
+            if ex is not None:
+                reasons["کندل_های_حل_شده_با_تایم_پایین"] += 1
+                if entry_bar:
+                    reasons["کندل_ورود_با_تایم_پایین"] += 1
+                return ex
+        if entry_bar:
+            reasons["کندل_ورود_با_حدس_مسیر"] += 1
+            fav = entry_bar_fav(pos["direction"], pos["eff_entry"], o_, h_, l_, c_)
+            return process_pos_candle(pos, h_, l_, t_bar, fav=fav)
+        return process_pos_candle(pos, h_, l_, t_bar)
 
     # هزینه‌های تقریبی این نماد (برحسب قیمت)
     commission_cost = COMMISSION_SPREAD_MULT * float(spread)
@@ -931,20 +991,26 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         set_final(zone_df, pos["ZoneID"], final, reason, exit_time, idx=z_idx)
         log_event(events, exit_time, symbol, pos["ZoneID"], "Exit", final)
 
-    def process_pos_candle(pos, h, l, t):
-        """خروج/مدیریت یک پوزیشن در یک کندل H4 — همیشه بدبینانه (اول استاپ).
-        مدیریت (سیو سود/ریسک‌فری) وقتی سود به MANAGE_TRIGGER_R برابر ریسک برسد فعال می‌شود."""
+    def process_pos_candle(pos, h, l, t, fav=None):
+        """خروج/مدیریت یک پوزیشن در یک کندل — همیشه بدبینانه (اول استاپ).
+        مدیریت (سیو سود/ریسک‌فری) وقتی سود به MANAGE_TRIGGER_R برابر ریسک برسد فعال می‌شود.
+
+        fav: در کندل ورود، بهترین قیمتی که «بعد از پر شدن» دیده شده (entry_bar_fav)؛
+             None یعنی کل کندل بعد از ورود است (کندل‌های بعدی).
+        قیمت‌ها Bid هستند: خرید با Bid بسته می‌شود، فروش با Ask (= Bid + spr)."""
         direction = pos["direction"]
         sl = pos["sl"]; tp = pos["tp"]
         if direction == "BUY":
-            hit_sl = l <= sl; hit_tp = h >= tp
+            f = h if fav is None else fav
+            hit_sl = l <= sl; hit_tp = f >= tp
         else:
-            hit_sl = h >= sl; hit_tp = l <= tp
+            f = l if fav is None else fav
+            hit_sl = h + spr >= sl; hit_tp = f + spr <= tp
 
         # فعال‌سازی مدیریت — فقط اگر در همین کندل استاپ لمس نشده باشد (بدبینانه)
         if manage_mode != "none" and not pos.get("managed") and not hit_sl:
             trg = pos["trigger"]
-            hit_trg = (h >= trg) if direction == "BUY" else (l <= trg)
+            hit_trg = (f >= trg) if direction == "BUY" else (f + spr <= trg)
             if hit_trg:
                 pos["managed"] = True
                 if manage_mode in ("partial2", "partial2_be"):
@@ -955,18 +1021,11 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                     # استاپ به نقطه‌ی ورود (ریسک‌فری)
                     pos["sl"] = pos["eff_entry"]
                     sl = pos["sl"]
-                    hit_sl = (l <= sl) if direction == "BUY" else (h >= sl)
+                    hit_sl = (l <= sl) if direction == "BUY" else (h + spr >= sl)
 
         if hit_sl and hit_tp:
-            if manage_mode == "none":
-                res = resolve_both_hit_m15(direction, sl, tp, t)
-                if res == "tp":
-                    reasons["خروج_همزمان_حل_با_M15"] += 1
-                    return True, tp, "هر دو در یک کندل: M15 → حدسود"
-                if res == "sl":
-                    reasons["خروج_همزمان_حل_با_M15"] += 1
-                    return True, sl, "هر دو در یک کندل: M15 → حدضرر"
-                reasons["خروج_همزمان_بدون_M15_استاپ_فرض"] += 1
+            # ترتیب داخل همین کندل معلوم نیست → بدبینانه: اول استاپ
+            reasons["خروج_همزمان_بدون_M15_استاپ_فرض"] += 1
             return True, sl, "هر دو در یک کندل: حدضرر"
         if hit_sl:
             if pos.get("managed") and manage_mode in ("partial2_be", "be2"):
@@ -1035,7 +1094,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         # ---------- exits for already-open positions ----------
         still_open=[]
         for pos in open_pos:
-            exited, exit_price, reason = process_pos_candle(pos, h, l, t)
+            exited, exit_price, reason = step_position(pos, o, h, l, c, t)
             if exited:
                 finalize_trade(pos, t, float(exit_price), reason)
             else:
@@ -1114,6 +1173,11 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         for z in live_zones:
             if id(z) in used:
                 continue
+            # لمسِ همین کندل را ربات لایو فقط بعد از بسته شدن کندل می‌فهمد؛ پس تصمیم درباره‌ی
+            # این زون (سفارش/رد) از کندل بعد گرفته می‌شود — نه با نگاه به داخل همین کندل.
+            if NO_SAME_BAR_TOUCH_FILL and z.last_touch_i == i:
+                reasons["تعویق_سفارش_لمس_همین_کندل"] += 1
+                continue
             if z.touch_count>=3:
                 reasons["لغو_به_خاطر_تست_سوم"] += 1
                 set_final(zone_df, z.zone_id, "رد شد", "تست سوم ممنوع", t, idx=z_idx)
@@ -1179,6 +1243,15 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                     set_final(zone_df, z.zone_id, "رد شد", "زون خیلی کوچک (استاپ نزدیک)", t, idx=z_idx)
                     log_event(events, t, symbol, z.zone_id, "Rejected", "SmallZone")
                     used.add(id(z)); continue
+
+            # عین ربات: اگر قیمتِ لحظه‌ی ثبت (باز شدن کندل) از نقطه‌ی ورود رد شده باشد، سفارش
+            # لیمیت معنا ندارد؛ زون سهمیه نمی‌گیرد و برای کندل‌های بعد (اگر قیمت برگشت) می‌ماند.
+            if NO_SAME_BAR_TOUCH_FILL:
+                _h = z.high() - z.low()
+                _ent = z.proximal + entry_off * _h if z.direction == "BUY" else z.proximal - entry_off * _h
+                if (z.direction == "BUY" and _ent >= o + spr) or (z.direction == "SELL" and _ent <= o):
+                    reasons["رد_به_خاطر_عبور_قیمت_از_ورود"] += 1
+                    continue
 
             candidates.append((z, 1 if z.touch_count==1 else 2))
 
@@ -1300,7 +1373,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             filled_now = False
             direction = p["z"].direction
 
-            if direction=="BUY" and l <= p["entry"]:
+            # خرید لیمیت با Ask پر می‌شود (Bid + اسپرد)، فروش لیمیت با Bid
+            if direction=="BUY" and l + spr <= p["entry"]:
                 filled_now = True
             elif direction=="SELL" and h >= p["entry"]:
                 filled_now = True
@@ -1338,26 +1412,15 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 "managed": False,
             }
 
-            # کندل ورود: با M15 لحظه‌ی پر شدن و ترتیب استاپ/حدسود دقیق مشخص می‌شود
-            res = resolve_entry_candle_m15(direction, p["entry"], pos["sl"], pos["tp"], t) \
-                if manage_mode == "none" else None
-            if res == "sl":
-                reasons["کندل_ورود_حل_با_M15"] += 1
-                finalize_trade(pos, t, float(pos["sl"]), "حدضرر (کندل ورود، M15)")
-            elif res == "tp":
-                reasons["کندل_ورود_حل_با_M15"] += 1
-                finalize_trade(pos, t, float(pos["tp"]), "حدسود (کندل ورود، M15)")
-            elif res == "open":
-                new_open_positions.append(pos)
+            # کندل ورود: فقط اتفاقاتِ «بعد از» پر شدن حساب می‌شود — با تایم پایین‌تر اگر باشد،
+            # وگرنه با حدس مسیر کندل (ENTRY_BAR_MODE). استاپ همیشه بدبینانه اول بررسی می‌شود.
+            exited, exit_price, reason = step_position(pos, o, h, l, c, t, entry_bar=True)
+            if exited:
+                if "حدسود" in str(reason) and m15_t is None:
+                    reasons["TP_کندل_ورود_بدون_M15"] += 1
+                finalize_trade(pos, t, float(exit_price), reason)
             else:
-                # بدون M15: بدبینانه (اگر هر دو لمس شد، استاپ) + اعمال مدیریت سیوسود/ریسک‌فری
-                exited, exit_price, reason = process_pos_candle(pos, h, l, t)
-                if exited:
-                    if "حدسود" in str(reason):
-                        reasons["TP_کندل_ورود_بدون_M15"] += 1
-                    finalize_trade(pos, t, float(exit_price), reason)
-                else:
-                    new_open_positions.append(pos)
+                new_open_positions.append(pos)
 
             p["active"] = False
 
@@ -1509,6 +1572,64 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 if dtr_now != 0 and htr_now != 0 and dtr_now != htr_now:
                     blockers.append(f"روند روزانه {trend_txt.get(dtr_now)} ولی ۴ساعته {trend_txt.get(htr_now)} (ناهم‌جهت)")
             state["دلیل_نبود"] = " + ".join(blockers) if blockers else "فیلترها سبزند"
+
+            if not NO_SAME_BAR_TOUCH_FILL:
+                pass   # رفتار قدیمی: فقط سفارش‌های ثبت‌شده‌ی بازپخش + زون‌های مسلح
+            elif not filters_ok:
+                # بک‌تستر اول کندل بعد، سفارش‌های پرنشده را با همین فیلترهای تازه لغو می‌کند
+                # (لغو_به_خاطر_رنج_یا_روند_لحظه_ورود)؛ ربات هم نباید تا ۴ ساعت نگهشان دارد.
+                state["pending"] = []
+            else:
+                # زون‌های لمس‌شده‌ای که هنوز سفارش نگرفته‌اند — از جمله زونی که در همین آخرین
+                # کندل لمس شد و طبق NO_SAME_BAR_TOUCH_FILL تصمیمش به کندل بعد موکول شد.
+                # بک‌تستر همین‌ها را کندل بعد (بعد از سفارش‌های موجود و قبل از زون‌های لمس‌نشده)
+                # سفارش می‌دهد؛ ربات لایو هم همین الان همین کار را می‌کند.
+                wz_c = [wz for wz in w_z
+                        if wz.created_time + pd.Timedelta(days=7) <= t_last
+                        and (wz.superseded_time is None or t_last < wz.superseded_time)]
+                atr_last = float(h4["atr"].iloc[-1]) if "atr" in h4.columns else float("nan")
+                cands_next = []
+                for z in h_z:
+                    if z.created_time >= t_last or z.expired or id(z) in used:
+                        continue
+                    if z.superseded_time is not None and t_last >= z.superseded_time:
+                        continue
+                    if z.touch_count not in (1, 2):
+                        continue
+                    opp_dir = "SELL" if z.direction == "BUY" else "BUY"
+                    if any(body_overlaps_zone(o_last, c_last, wz) for wz in wz_c if wz.direction == opp_dir):
+                        continue
+                    height = z.high() - z.low()
+                    if height <= 0:
+                        continue
+                    if min_profit_margin_r > 0 and z.departure_h < min_profit_margin_r * (1.0 + entry_off + sl_off):
+                        continue
+                    if min_departure_atr > 0 and z.conf_body_atr < min_departure_atr:
+                        continue
+                    if min_risk_atr > 0 and (pd.isna(atr_last) or
+                                             height * (1.0 + entry_off + sl_off) < min_risk_atr * atr_last):
+                        continue
+                    if z.direction == "BUY":
+                        entry = z.proximal + entry_off * height
+                        sl = z.distal - sl_off * height
+                        risk = entry - sl
+                        tp = entry + rr * risk
+                    else:
+                        entry = z.proximal - entry_off * height
+                        sl = z.distal + sl_off * height
+                        risk = sl - entry
+                        tp = entry - rr * risk
+                    if risk <= 0:
+                        continue
+                    # قیمت از ورود رد شده → فعلاً سفارشی نمی‌شود گذاشت؛ سهمیه هم نگیرد
+                    if (z.direction == "BUY" and entry >= c_last) or (z.direction == "SELL" and entry <= c_last):
+                        continue
+                    cands_next.append({"zone_id": z.zone_id, "direction": z.direction,
+                                       "entry": float(entry), "sl": float(sl), "tp": float(tp),
+                                       "placed_time": t_last, "test": 1 if z.touch_count == 1 else 2,
+                                       "dist": float(abs(c_last - z.proximal))})
+                cands_next.sort(key=lambda a: a["dist"])
+                state["pending"] = state["pending"] + cands_next
 
             if filters_ok:
                 wz_now = [wz for wz in w_z
@@ -2337,12 +2458,18 @@ def main():
     max_data_time = None
 
     # --- همه‌ی دیتاها یک‌جا خوانده می‌شود (در حالت «عین لایو» همه با هم لازم‌اند) ---
+    print("🔧 تنظیمات واقع‌بینی بک‌تست:")
+    print(f"   کندل ورود بدون تایم پایین‌تر: {ENTRY_BAR_MODE}"
+          f"{'  ⚠️ (خوش‌بینانه — فقط برای مقایسه)' if ENTRY_BAR_MODE == 'optimistic' else ''}")
+    print(f"   سفارش روی لمسِ همین کندل: {'از کندل بعد (مثل لایو)' if NO_SAME_BAR_TOUCH_FILL else '⚠️ همین کندل (نگاه به آینده)'}")
+    print(f"   مدل Bid/Ask با اسپرد: {'روشن' if MODEL_BID_ASK else 'خاموش'}")
     frames = {}
+    no_ltf = []
     for zp in zip_files:
         symbol = os.path.basename(zp).split(".")[0]  # e.g. USDJPY.W.D.H4.zip => USDJPY
         h4, d1, w1, m15 = load_timeframes_from_zip(zp)
-        if m15 is None and USE_M15:
-            print(f"⚠️ {symbol}: فایل M15 داخل ZIP نیست؛ ابهام‌های داخل کندل بدبینانه (استاپ) حساب می‌شود.")
+        if m15 is None and USE_M15 and symbol not in LIVE_EXCLUDE_SYMBOLS:
+            no_ltf.append(symbol)
         if not h4.empty:
             end_t = pd.to_datetime(h4["time"].max(), errors="coerce")
             if pd.notna(end_t):
@@ -2351,6 +2478,14 @@ def main():
             print(f"⛔ {symbol}: طبق LIVE_EXCLUDE_SYMBOLS از سبد کنار گذاشته شد")
             continue
         frames[symbol] = (h4, d1, w1, m15)
+
+    if USE_M15:
+        if no_ltf and len(no_ltf) == len(frames):
+            print(f"   دیتای تایم پایین‌تر (M1/M5/M15) داخل ZIPها نیست → کندل ورود با حالت «{ENTRY_BAR_MODE}» حساب می‌شود.")
+        elif no_ltf:
+            print(f"   ⚠️ این نمادها دیتای تایم پایین‌تر ندارند و با حالت «{ENTRY_BAR_MODE}» حساب می‌شوند: {', '.join(no_ltf)}")
+        else:
+            print("   دیتای تایم پایین‌تر برای همه‌ی نمادها پیدا شد → ترتیب اتفاقات داخل کندل از روی آن حساب می‌شود.")
 
     # --- گزارش دیتایی که واقعاً خوانده شد ---
     # نبودن دیتا خودش خطا می‌دهد و معلوم است؛ خطر واقعی «دیتای اشتباه» است که
@@ -2794,6 +2929,12 @@ def main():
 
         with pd.ExcelWriter(summary_path, engine="openpyxl") as sw:
             summary_out.to_excel(sw, sheet_name="خلاصه", index=False)
+            pd.DataFrame([
+                {"تنظیم": "ENTRY_BAR_MODE (کندل ورود)", "مقدار": ENTRY_BAR_MODE},
+                {"تنظیم": "NO_SAME_BAR_TOUCH_FILL (سفارش از کندل بعد از لمس)", "مقدار": NO_SAME_BAR_TOUCH_FILL},
+                {"تنظیم": "MODEL_BID_ASK (اسپرد در پر شدن و خروج)", "مقدار": MODEL_BID_ASK},
+                {"تنظیم": "دیتای تایم پایین‌تر", "مقدار": "ندارد" if (not USE_M15 or no_ltf) else "دارد"},
+            ]).to_excel(sw, sheet_name="تنظیمات_واقع_بینی", index=False)
             if stab_out is not None:
                 stab_out.to_excel(sw, sheet_name="پایداری_نماد", index=False)
             if loo_out is not None:

@@ -6,7 +6,7 @@ import multiprocessing as mp
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(os.path.dirname(HERE))          # پوشه‌ی اصلی پروژه
+REPO = os.path.dirname(HERE)                             # پوشه‌ی اصلی پروژه
 CACHE = os.path.join(HERE, "_cache")                     # خروجی‌های میانی
 os.makedirs(CACHE, exist_ok=True)
 sys.path.insert(0, REPO)
@@ -16,6 +16,9 @@ import run_backtest as rb
 rb.BACKTEST_START = pd.Timestamp("2000-01-01")
 rb.BACKTEST_END = None
 rb.USE_M15 = False
+# این تحلیل رفتار ربات «در همان ۶ هفته» را بازسازی می‌کند؛ آن موقع مغز ربات هنوز اصلاح
+# زمان‌بندی سفارش (NO_SAME_BAR_TOUCH_FILL) را نداشت. برای دیدن رفتار نسخه‌ی جدید True بگذار.
+rb.NO_SAME_BAR_TOUCH_FILL = False
 H4_BARS, D1_BARS, W1_BARS = 2000, 500, 300
 ENTRY_OFF, RR = -0.50, 3.0
 

@@ -6,7 +6,7 @@ import pandas as pd
 
 warnings.filterwarnings("ignore")
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(os.path.dirname(HERE))          # پوشه‌ی اصلی پروژه
+REPO = os.path.dirname(HERE)                             # پوشه‌ی اصلی پروژه
 CACHE = os.path.join(HERE, "_cache")                     # خروجی‌های میانی
 os.makedirs(CACHE, exist_ok=True)
 

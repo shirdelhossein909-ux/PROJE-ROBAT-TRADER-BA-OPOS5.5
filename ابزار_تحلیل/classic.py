@@ -5,7 +5,7 @@ import os, sys, pickle
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(os.path.dirname(HERE))          # پوشه‌ی اصلی پروژه
+REPO = os.path.dirname(HERE)                             # پوشه‌ی اصلی پروژه
 CACHE = os.path.join(HERE, "_cache")                     # خروجی‌های میانی
 os.makedirs(CACHE, exist_ok=True)
 sys.path.insert(0, REPO)
@@ -30,6 +30,8 @@ def main():
     rb.BACKTEST_START = pd.Timestamp(min(starts))
     rb.BACKTEST_END = None
     rb.USE_M15 = False
+    # بکتستر «قبل از اصلاح» (همانی که نتایج قبلی را ساخته بود)
+    rb.ENTRY_BAR_MODE, rb.NO_SAME_BAR_TOUCH_FILL, rb.MODEL_BID_ASK = "optimistic", False, False
     print("BACKTEST_START", rb.BACKTEST_START)
     res, book, alloc = rb.portfolio_live_replay(frames, SPREADS, entry_off=rb.DEFAULT_ENTRY_OFF,
                                                 sl_off=rb.DEFAULT_SL_OFF, rr=rb.DEFAULT_RR,
