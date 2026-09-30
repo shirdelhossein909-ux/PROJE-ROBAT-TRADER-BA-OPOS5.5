@@ -1,0 +1,1138 @@
+# -*- coding: utf-8 -*-
+"""ربات معامله‌گر لایو (نسخه ۲) — استراتژی زون عرضه/تقاضا روی متاتریدر ۵.
+
+ویژگی‌ها:
+  - مغز ربات همان backtest_one از run_backtest.py است (یک مغز برای بک‌تست و لایو).
+  - سفارش‌ها «از قبل» گذاشته می‌شوند: زونی که فیلترهایش سبز است، سفارش لیمیتش داخل
+    متاتریدر آماده است؛ اگر وسط کندل قیمت برسد، سرور بروکر همان لحظه پر می‌کند
+    (جا ماندن به‌خاطر انتظار برای کلوز کندل وجود ندارد).
+  - حد ضرر و حد سود روی خود سفارش ست می‌شود — اجرا با سرور بروکر است، حتی اگر
+    کامپیوتر خاموش شود پوزیشن‌ها بی‌محافظ نمی‌مانند.
+  - فقط روی نمادهای سبد انتخابی کار می‌کند و فقط به سفارش‌های خودش (امضای MAGIC)
+    دست می‌زند — با معاملات دستی یا ربات‌های دیگر هیچ کاری ندارد.
+  - لاگ کامل فارسی: دلیل هر سفارش، دلیل سفارش نگذاشتن، پر شدن، بسته شدن با سود/ضرر،
+    قطع و وصل ارتباط — هم در CMD هم در فایل (پوشه‌ی logs کنار همین فایل).
+  - ضدضربه: قطع ارتباط → اخطار + تلاش دوباره هر چند ثانیه تا وصل شود؛ هیچ خطایی
+    ربات را ساکت نمی‌کند؛ فایل ضربان قلب (logs/heartbeat.txt) هر دور به‌روز می‌شود.
+
+اجرا:  python live_trader.py     (متاتریدر ۵ باز، لاگینِ دمو، Algo Trading روشن)
+توقف:  Ctrl+C
+"""
+
+import os
+import sys
+import math
+import json
+import time as _time
+import datetime as dt
+import urllib.request
+
+import pandas as pd
+
+import run_backtest as rb
+
+# ================== تنظیمات ==================
+# فقط همین نمادها — سبد انتخابی. ربات سراغ هیچ نماد دیگری نمی‌رود.
+# ترتیب مهم است: در سهمیه‌بندی دوری، نماد اولِ هر دور اولویت می‌گیرد.
+# باید عیناً با LIVE_BASKET_ORDER در run_backtest.py یکی بماند.
+#
+# USDCAD و NZDUSD حذف شدند. دلیل: در هر دو دیتاست (۶ ساله‌ی این بروکر و ۸ ساله‌ی
+# بروکر قبلی) تنها نمادهای ضررده بودند، تست پایداری هم هر دو نیمه را منفی نشان داد،
+# و تست حذف تک‌نماد گفت برداشتنشان حساب را واضح بهتر می‌کند.
+BASKET = ["XAUUSD", "AUDJPY", "AUDUSD", "CHFJPY", "EURCAD", "EURNZD",
+          "GBPJPY", "GBPNZD", "NZDCAD", "USDCHF"]
+
+RISK_PER_TRADE = 0.005    # ریسک هر معامله: نیم درصد از اکویتی
+
+# سیو سود (برنده‌ی بک‌تست): وقتی سود پوزیشن به ۲ برابر ریسک رسید، نصف حجم نقد می‌شود
+MANAGE_PARTIAL = True
+MANAGE_TRIGGER_R = 2.0
+PARTIAL_FRAC = 0.5
+
+# --- وزن‌دهی ریسک بر اساس سشن (برنده‌ی بک‌تست: حالت تهاجمی) ---
+# ضریب ریسک هر سشن؛ ۱ = ریسک پایه (RISK_PER_TRADE)
+USE_SESSION_WEIGHTS = True
+SESSION_WEIGHTS = {
+    "لندن": 1.5,
+    "همپوشانی لندن-نیویورک": 1.25,
+    "سیدنی/پایان روز": 1.0,
+    "آسیا (توکیو)": 0.75,
+    "آسیا (پایان)": 0.5,
+    "نیویورک": 0.5,
+}
+# اگر وزن سشن عوض شد، سفارش‌های در انتظار با حجم جدید دوباره چیده شوند
+# (تا رفتار لایو با بک‌تست یکی بماند — بک‌تست وزن را بر اساس سشنِ لحظه‌ی ورود می‌گیرد)
+SESSION_REPLACE_ORDERS = True
+SESSION_REPLACE_TOLERANCE = 0.15   # اختلاف حجم کمتر از ۱۵٪ → دست نمی‌زنیم
+RESERVE = 0.15            # سرمایه‌ی رزرو (مثل بک‌تست)
+MAX_OPEN_TOTAL = 8        # سقف تریدهای باز هم‌زمان کل حساب — پر شود، اوردرهای در انتظار موقتاً جمع می‌شوند
+MAX_PENDING_TOTAL = 8     # سقف کل اوردرهای در انتظار روی کل حساب (هر نماد حداکثر ۳)
+MAX_RISK_HARD_CAP = 0.01  # قفل ایمنی: ریسک واقعی هیچ معامله‌ای از ۱٪ اکویتی بیشتر نشود
+ENTRY_OFF = -0.50         # ورود وسط زون (مثل بک‌تست)
+RR = 3.0                  # حد سود = ۳ برابر ریسک
+
+POLL_SECONDS = 30         # هر چند ثانیه وضعیت را چک کند
+RECONNECT_SECONDS = 5     # فاصله‌ی تلاش‌های اتصال دوباره
+H4_BARS = 2000            # عمق تاریخچه برای بازپخش استراتژی
+D1_BARS = 500
+W1_BARS = 300
+
+MAGIC = 777001            # امضای سفارش‌های این ربات
+ALLOW_REAL = False        # قفل ایمنی: فقط حساب دمو
+# مسیر لاگ باید مطلق باشد. با مسیر نسبی، هر چیزی که پوشه‌ی جاری را عوض کند
+# (از جمله mt5.initialize وقتی خودش ترمینال را بالا می‌آورد) باعث می‌شود لاگ‌ها
+# جای دیگری بیفتند — بدون هیچ خطایی. یک بار همین اتفاق افتاد و روزها طول کشید
+# تا معلوم شود لاگ کجا رفته.
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+
+# --- خبررسانی به پیام‌رسان «بله» ---
+BALE_TOKEN = "2042736970:Cy7cay7YmRj08xrJveIgHiGT2UNV5lA5sLw"           # توکن رباتی که در بله ساختی (خالی = خبررسانی خاموش)
+BALE_CHAT_ID = ""         # خالی بگذار تا خودش پیدا کند (فقط اول یک پیام به ربات بله‌ات بده)
+DAILY_REPORT_HOUR = 12    # ساعت ارسال گزارش‌های روزانه/هفتگی/ماهانه (به وقت VPS)
+START_BALANCE = 100000.0  # سرمایه‌ی اولیه — برای محاسبه‌ی «سود کل حساب از شروع» (روی حساب جدید عوضش کن)
+# =============================================
+
+# بازپخش لایو باید کل پنجره‌ی دیتا را ببیند (بدون برش تاریخ بک‌تست)
+rb.BACKTEST_START = pd.Timestamp("2000-01-01")
+rb.BACKTEST_END = None
+rb.USE_M15 = False
+
+try:
+    import MetaTrader5 as mt5
+except ImportError:
+    print("پکیج MetaTrader5 نصب نیست. نصب:  pip install MetaTrader5")
+    sys.exit(1)
+
+
+# ---------------- لاگ و ضربان قلب ----------------
+os.makedirs(LOG_DIR, exist_ok=True)
+
+_log_fail = {"n": 0, "reported": False}
+
+def log(msg, symbol="", bale=True):
+    stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{stamp}] {symbol + ' | ' if symbol else ''}{msg}"
+
+    # چاپ در پنجره نباید هیچ‌وقت ربات را بیندازد. اگر پنجره‌ی CMD از بین رفته
+    # باشد، نوشتن روی خروجی خطا می‌دهد — و آن خطا نباید به بیرون درز کند.
+    try:
+        print(line, flush=True)
+    except Exception:
+        pass
+
+    fname = os.path.join(LOG_DIR, "گزارش_" + dt.datetime.now().strftime("%Y%m%d") + ".txt")
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with open(fname, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        _log_fail["n"] = 0
+    except Exception as e:
+        # شکستِ بی‌صدا ممنوع: اگر نوشتن لاگ کار نکند، دست‌کم یک بار از راه بله بگو.
+        _log_fail["n"] += 1
+        if not _log_fail["reported"] and _log_fail["n"] >= 3:
+            _log_fail["reported"] = True
+            try:
+                bale_send(f"⚠️ نوشتن فایل لاگ کار نمی‌کند ({e}) — مسیر: {LOG_DIR}\n"
+                          f"ربات به کارش ادامه می‌دهد ولی لاگ روی دیسک ثبت نمی‌شود.")
+            except Exception:
+                pass
+
+    # خط‌های لاگ به بله هم فرستاده می‌شوند (مگر آن‌هایی که در پیام ترکیبی می‌روند)
+    if bale:
+        bale_send(line)
+
+
+# ---------------- خبررسانی به بله ----------------
+from collections import deque
+
+_bale_chat_id = None
+_bale_fail_logged = False
+_bale_queue = deque(maxlen=500)  # پیام‌های نرفته نگه داشته می‌شوند تا ارتباط برگردد
+
+def _bale_detect_chat():
+    """اگر چت‌آیدی تنظیم نشده باشد، از آخرین پیامی که به ربات بله داده‌ای پیدایش می‌کند."""
+    try:
+        with urllib.request.urlopen(
+                f"https://tapi.bale.ai/bot{BALE_TOKEN}/getUpdates", timeout=10) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        for u in reversed(data.get("result", [])):
+            chat = (u.get("message") or {}).get("chat") or {}
+            if chat.get("id"):
+                print(f"[بله] چت‌آیدی شناسایی شد: {chat['id']} — برای اطمینان همین را در BALE_CHAT_ID بگذار.")
+                return str(chat["id"])
+        print("[بله] هنوز پیامی به ربات بله‌ات نداده‌ای — اول در بله به رباتت «سلام» بفرست.")
+    except Exception as e:
+        print(f"[بله] شناسایی چت‌آیدی ناموفق: {e}")
+    return None
+
+
+def bale_send(text):
+    """پیام را در صف می‌گذارد و تلاش می‌کند صف را بفرستد؛ نرفته‌ها گم نمی‌شوند."""
+    if not BALE_TOKEN:
+        return
+    _bale_queue.append(text)
+    bale_flush()
+
+
+def bale_flush():
+    """ارسال پیام‌های مانده در صف، به ترتیب؛ اگر ارتباط نبود، صف می‌ماند برای بعد."""
+    global _bale_chat_id, _bale_fail_logged
+    if not BALE_TOKEN or not _bale_queue:
+        return
+    if _bale_chat_id is None:
+        _bale_chat_id = BALE_CHAT_ID or _bale_detect_chat()
+    if not _bale_chat_id:
+        return
+    while _bale_queue:
+        txt = _bale_queue[0]
+        try:
+            data = json.dumps({"chat_id": _bale_chat_id, "text": txt}).encode("utf-8")
+            req = urllib.request.Request(
+                f"https://tapi.bale.ai/bot{BALE_TOKEN}/sendMessage",
+                data=data, headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=5)
+            _bale_queue.popleft()
+            if _bale_fail_logged:
+                _bale_fail_logged = False
+                print("[بله] ارتباط با بله برگشت — پیام‌های مانده ارسال شدند.")
+        except Exception as e:
+            if not _bale_fail_logged:
+                _bale_fail_logged = True
+                print(f"[بله] ارسال فعلاً ناموفق ({e}) — {len(_bale_queue)} پیام در صف می‌ماند و بعداً می‌رود.")
+            break
+
+def heartbeat(status="سالم"):
+    try:
+        with open(os.path.join(LOG_DIR, "heartbeat.txt"), "w", encoding="utf-8") as f:
+            f.write(f"{dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | وضعیت: {status}\n")
+    except Exception:
+        pass
+
+
+# ---------------- اتصال ضدضربه ----------------
+def connect_with_retry(bale_notify=True):
+    """آن‌قدر تلاش می‌کند تا وصل شود؛ هر مشکل را با زبان ساده گزارش می‌دهد."""
+    attempt = 0
+    while True:
+        attempt += 1
+        if not mt5.initialize():
+            log(f"⛔ اتصال به متاتریدر برقرار نشد (تلاش {attempt}): {mt5.last_error()} — "
+                f"متاتریدر ۵ باید باز و لاگین باشد. {RECONNECT_SECONDS} ثانیه دیگر دوباره تلاش می‌کنم...")
+            heartbeat("قطع — در حال تلاش برای اتصال")
+            _time.sleep(RECONNECT_SECONDS)
+            continue
+
+        ti = mt5.terminal_info()
+        if ti is None or not ti.trade_allowed:
+            log(f"⛔ دکمه‌ی Algo Trading در متاتریدر خاموش است! روشنش کن (تلاش {attempt}). "
+                f"{RECONNECT_SECONDS} ثانیه دیگر دوباره چک می‌کنم...")
+            heartbeat("منتظر روشن شدن Algo Trading")
+            mt5.shutdown()
+            _time.sleep(RECONNECT_SECONDS)
+            continue
+
+        acc = mt5.account_info()
+        if acc is None:
+            log(f"⛔ اطلاعات حساب نیامد — در متاتریدر لاگین نیستی؟ (تلاش {attempt})")
+            heartbeat("منتظر لاگین حساب")
+            mt5.shutdown()
+            _time.sleep(RECONNECT_SECONDS)
+            continue
+
+        if acc.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO and not ALLOW_REAL:
+            log(f"🛑 حساب {acc.login} دمو نیست! این نسخه فقط روی دمو کار می‌کند. ربات خاموش شد.")
+            mt5.shutdown()
+            sys.exit(1)
+
+        log(f"✅ اتصال برقرار شد | حساب {acc.login} ({acc.server}) | "
+            f"{'دمو' if acc.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO else 'واقعی'} | "
+            f"موجودی {acc.balance:,.2f} {acc.currency}", bale=bale_notify)
+        heartbeat("سالم")
+        return acc
+
+
+def ensure_connected():
+    """اگر وسط کار ارتباط قطع شد: اخطار بده و تا وصل شدن تلاش کن."""
+    ti = mt5.terminal_info()
+    if ti is None:
+        log("⚠️ ارتباط با متاتریدر قطع شد! تلاش خودکار برای اتصال دوباره شروع شد...")
+        heartbeat("قطع — در حال تلاش برای اتصال")
+        try:
+            mt5.shutdown()
+        except Exception:
+            pass
+        connect_with_retry()
+        log("🔄 ارتباط دوباره برقرار شد — ادامه می‌دهیم.")
+
+
+# بازه‌های سشن (مستقل از فایل بک‌تست تعریف شده تا ربات هرگز به‌خاطر نبودِ تابع کرش نکند)
+_SESSION_RANGES = [
+    (0, 4,  "آسیا (توکیو)"),
+    (4, 8,  "آسیا (پایان)"),
+    (8, 12, "لندن"),
+    (12, 16, "همپوشانی لندن-نیویورک"),
+    (16, 20, "نیویورک"),
+    (20, 24, "سیدنی/پایان روز"),
+]
+
+def _hour_to_session(h):
+    for a, b, nm in _SESSION_RANGES:
+        if a <= h < b:
+            return nm
+    return "نامشخص"
+
+
+def current_session_weight():
+    """وزن ریسکِ سشنِ همین لحظه (بر اساس ساعت UTC)."""
+    if not USE_SESSION_WEIGHTS:
+        return 1.0, "بدون وزن‌دهی"
+    h = dt.datetime.now(dt.timezone.utc).hour
+    name = _hour_to_session(h)
+    return float(SESSION_WEIGHTS.get(name, 1.0)), name
+
+
+def pick_filling(si, for_market=True):
+    """حالت پرکردن سفارش را از خود نماد می‌خواند (رفع خطای 10030).
+    برای بستن پوزیشن (market): IOC یا FOK — برای پندینگ: RETURN."""
+    modes = getattr(si, "filling_mode", 0) or 0
+    if for_market:
+        if modes & 2:   # SYMBOL_FILLING_IOC
+            return mt5.ORDER_FILLING_IOC
+        if modes & 1:   # SYMBOL_FILLING_FOK
+            return mt5.ORDER_FILLING_FOK
+        return mt5.ORDER_FILLING_IOC
+    return mt5.ORDER_FILLING_RETURN
+
+
+def resolve_symbol(base):
+    """پیدا کردن اسم نماد نزد بروکر (با پسوند/پیشوند احتمالی) و فعال‌سازی آن."""
+    if mt5.symbol_info(base) is not None:
+        mt5.symbol_select(base, True)
+        return base
+    cands = mt5.symbols_get(f"*{base}*")
+    if cands:
+        name = sorted((c.name for c in cands), key=len)[0]
+        mt5.symbol_select(name, True)
+        return name
+    return None
+
+
+# ---------------- دیتا و بازپخش استراتژی ----------------
+def fetch_df(broker_name, timeframe, count):
+    """فقط کندل‌های بسته‌شده (کندل در حال شکل‌گیری حذف می‌شود)."""
+    rates = mt5.copy_rates_from_pos(broker_name, timeframe, 1, count)
+    if rates is None or len(rates) == 0:
+        return None
+    df = pd.DataFrame(rates)
+    df["time"] = pd.to_datetime(df["time"], unit="s")
+    return df[["time", "open", "high", "low", "close"]].astype(
+        {"open": float, "high": float, "low": float, "close": float})
+
+
+def replay_state(base, broker_name):
+    """بازپخش استراتژی روی تاریخچه‌ی بروکر → سفارش‌هایی که همین الان باید وجود داشته باشند."""
+    h4 = fetch_df(broker_name, mt5.TIMEFRAME_H4, H4_BARS)
+    d1 = fetch_df(broker_name, mt5.TIMEFRAME_D1, D1_BARS)
+    w1 = fetch_df(broker_name, mt5.TIMEFRAME_W1, W1_BARS)
+    if h4 is None or d1 is None or w1 is None:
+        log("⚠️ دیتا از بروکر نیامد — این دور بررسی نشد.", base)
+        return None
+    out = rb.backtest_one(base, h4, d1, w1, None, 0.0,
+                          entry_off=ENTRY_OFF, rr=RR, m15=None, return_state=True)
+    return out[6]
+
+
+# ---------------- سفارش‌گذاری ----------------
+def calc_volume(broker_name, si, direction, entry, sl, risk_amt, equity):
+    """حجم از روی ریسک ثابت — محاسبه‌ی ضرر با تابع رسمی خود متاتریدر (order_calc_profit)
+    که برای هر نمادی (طلا، ین، ...) مشخصات قرارداد همان بروکر را دقیق حساب می‌کند.
+    + قفل ایمنی دوبل: ریسک واقعی حجم نهایی دوباره چک می‌شود."""
+    order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
+
+    loss_1lot = mt5.order_calc_profit(order_type, broker_name, 1.0, entry, sl)
+    if loss_1lot is None or loss_1lot >= 0:
+        return None, "متاتریدر ضررِ یک لات را حساب نکرد"
+    loss_1lot = abs(loss_1lot)
+
+    vol = risk_amt / loss_1lot
+    step = si.volume_step or 0.01
+    vol = math.floor(vol / step) * step
+    if vol < si.volume_min:
+        return None, f"حجم لازم ({vol}) از حداقل مجاز نماد ({si.volume_min}) کمتر است"
+    vol = min(vol, si.volume_max)
+    vol = round(vol, 8)
+
+    # قفل ایمنی دوبل: ریسک واقعی این حجم چقدر است؟
+    real_loss = mt5.order_calc_profit(order_type, broker_name, vol, entry, sl)
+    if real_loss is None:
+        return None, "چک نهایی ریسک ممکن نشد"
+    real_loss = abs(real_loss)
+    if real_loss > risk_amt * 1.2:
+        return None, f"ریسک واقعی ({real_loss:,.0f}$) از حد مجاز ({risk_amt:,.0f}$) بیشتر شد — سفارش رد شد"
+    if real_loss > equity * MAX_RISK_HARD_CAP:
+        return None, f"ریسک واقعی ({real_loss:,.0f}$) از قفل ایمنی {MAX_RISK_HARD_CAP*100:g}٪ حساب بیشتر است — سفارش رد شد"
+    return vol, f"ریسک واقعی {real_loss:,.0f}$"
+
+
+def place_pending(base, broker_name, p):
+    si = mt5.symbol_info(broker_name)
+    tick = mt5.symbol_info_tick(broker_name)
+    acc = mt5.account_info()
+    if si is None or tick is None or acc is None or tick.bid <= 0:
+        log(f"⚠️ زون {p['zone_id']}: قیمت/مشخصات نماد نیامد — سفارش گذاشته نشد (بازار بسته؟).", base)
+        return
+
+    entry = round(p["entry"], si.digits)
+    sl = round(p["sl"], si.digits)
+    tp = round(p["tp"], si.digits)
+
+    if p["direction"] == "BUY" and entry >= tick.ask:
+        log(f"⏭️ زون {p['zone_id']}: قیمت الان ({tick.ask}) پایین‌تر از نقطه‌ی ورود خرید ({entry}) است — سفارش معنا ندارد.", base)
+        return
+    if p["direction"] == "SELL" and entry <= tick.bid:
+        log(f"⏭️ زون {p['zone_id']}: قیمت الان ({tick.bid}) بالاتر از نقطه‌ی ورود فروش ({entry}) است — سفارش معنا ندارد.", base)
+        return
+
+    w, sess_name = current_session_weight()
+    risk_amt = acc.equity * (1.0 - RESERVE) * RISK_PER_TRADE * w
+    vol, vol_msg = calc_volume(broker_name, si, p["direction"], entry, sl, risk_amt, acc.equity)
+    if vol is None:
+        log(f"⚠️ زون {p['zone_id']}: سفارش گذاشته نشد — {vol_msg}", base)
+        return False
+
+    req = {
+        "action": mt5.TRADE_ACTION_PENDING,
+        "symbol": broker_name,
+        "volume": vol,
+        "type": mt5.ORDER_TYPE_BUY_LIMIT if p["direction"] == "BUY" else mt5.ORDER_TYPE_SELL_LIMIT,
+        "price": entry, "sl": sl, "tp": tp,
+        "magic": MAGIC,
+        "comment": str(p["zone_id"])[:31],
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_RETURN,
+    }
+    res = mt5.order_send(req)
+    side = "خرید" if p["direction"] == "BUY" else "فروش"
+    if res is None:
+        log(f"❌ زون {p['zone_id']}: پاسخ ارسال سفارش نیامد: {mt5.last_error()}", base)
+        return False
+    if res.retcode == mt5.TRADE_RETCODE_DONE:
+        log(f"🟢 سفارش {side} گذاشته شد | زون {p['zone_id']} | حجم {vol} لات ({vol_msg}) | "
+            f"سشن: {sess_name} × {w:g} | ورود {entry} | استاپ {sl} | تارگت {tp} | تیکت {res.order}", base)
+        return True
+    elif res.retcode == 10018:
+        log(f"🌙 بازار بسته است — سفارش زون {p['zone_id']} بعداً گذاشته می‌شود.", base)
+    else:
+        log(f"❌ سفارش زون {p['zone_id']} رد شد | کد {res.retcode} | {res.comment}", base)
+    return False
+
+
+def _age_txt(ts):
+    """عمر سفارش را به زبان ساده می‌نویسد."""
+    try:
+        sec = max(0, int(_time.time() - int(ts)))
+    except Exception:
+        return "نامشخص"
+    d, rem = divmod(sec, 86400)
+    h, rem = divmod(rem, 3600)
+    m = rem // 60
+    if d: return f"{d} روز و {h} ساعت"
+    if h: return f"{h} ساعت و {m} دقیقه"
+    return f"{m} دقیقه"
+
+
+def cancel_order(base, o, why="طبق قوانین استراتژی دیگر معتبر نیست",
+                 next_action="دوباره چیده نمی‌شود (زون دیگر معتبر نیست)", filters="", broker_name=None):
+    """لغو سفارش با گزارش مهندسی کامل: مشخصات سفارش، دلیل دقیق، وضعیت بازار و اقدام بعدی."""
+    side = "خرید" if o.type in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP) else "فروش"
+    price_now = ""
+    try:
+        tk = mt5.symbol_info_tick(broker_name or o.symbol)
+        if tk is not None:
+            price_now = f" | قیمت فعلی: {tk.bid}"
+    except Exception:
+        pass
+
+    res = mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket})
+    if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+        lines = [
+            f"🗑️ سفارش لغو شد | زون {o.comment} | {side} | تیکت {o.ticket}",
+            f"    ├ مشخصات: ورود {o.price_open} | استاپ {o.sl} | تارگت {o.tp} | حجم {o.volume_current} لات",
+            f"    ├ عمر سفارش: {_age_txt(o.time_setup)}{price_now}",
+            f"    ├ دلیل دقیق: {why}",
+        ]
+        if filters:
+            lines.append(f"    ├ وضعیت فیلترها: {filters}")
+        lines.append(f"    └ اقدام بعدی: {next_action}")
+        log("\n".join(lines), base)
+    else:
+        log(f"⚠️ لغو سفارش {o.ticket} (زون {o.comment}) موفق نبود | کد: "
+            f"{getattr(res, 'retcode', mt5.last_error())} | دلیلی که می‌خواستیم لغو کنیم: {why}", base)
+
+
+_last_note = {}   # آخرین پیام وضعیت هر نماد — برای جلوگیری از تکرار
+
+def sync_all(symbols, reason_txt="بازبینی"):
+    """بازپخش استراتژی روی همه‌ی نمادها + سهمیه‌بندی منصفانه‌ی اوردرها:
+    دور اول به هر نماد یک اوردر (بهترین زونش)، بعد دور دوم و سوم —
+    تا سقف کل (MAX_PENDING_TOTAL). طبق بک‌تست: هر چارت تا ۳، سقف کل ۸."""
+
+    # ۱) خواسته‌های استراتژی برای هر نماد (به ترتیب اولویت خود نماد)
+    all_wanted = {}
+    notes = {}
+    filters_txt = {}
+    zone_reasons = {}
+    for b, name in symbols.items():
+        try:
+            st = replay_state(b, name)
+        except Exception as e:
+            log(f"❌ خطا در بازپخش استراتژی: {e}", b)
+            st = None
+        if st is None:
+            continue
+        all_wanted[b] = list(st["pending"]) + list(st.get("armed", []))
+        notes[b] = st.get("دلیل_نبود", "") or st.get("فیلتر_توضیح", "")
+        filters_txt[b] = st.get("فیلتر_توضیح", "")
+        zone_reasons[b] = st.get("دلایل_زون", {})
+
+    # ۲) سهمیه‌بندی منصفانه (طبق نتیجه‌ی بک‌تست «هر چارت ۳ + سقف ۸»):
+    # دور اول به هر نماد یک اوردر، بعد دور دوم و سوم — تا سقف کل
+    alloc = {}
+    total = 0
+    for r in range(3):  # حداکثر ۳ اوردر برای هر نماد
+        for b in symbols:
+            lst = all_wanted.get(b, [])
+            if len(lst) > r and total < MAX_PENDING_TOTAL:
+                alloc.setdefault(b, {})[str(lst[r]["zone_id"])] = lst[r]
+                total += 1
+
+    # ۳) همگام‌سازی هر نماد با سهمیه‌اش
+    my_positions = [p for p in (mt5.positions_get() or ()) if p.magic == MAGIC]
+    for b, name in symbols.items():
+        desired = alloc.get(b, {})
+        existing = {o.comment: o for o in (mt5.orders_get(symbol=name) or ()) if o.magic == MAGIC}
+
+        for cm, o in existing.items():
+            if cm not in desired:
+                # دلیل دقیق لغو: اول از موتور استراتژی، وگرنه سهمیه/سقف
+                zr = zone_reasons.get(b, {}).get(str(cm), "")
+                still_wanted = any(str(p["zone_id"]) == str(cm) for p in all_wanted.get(b, []))
+                if zr:
+                    why, nxt = zr, "دوباره چیده نمی‌شود (زون طبق قوانین استراتژی باطل شد)"
+                elif still_wanted:
+                    why = f"زون معتبر است ولی سهمیه‌ی اوردر پر شد (سقف {MAX_PENDING_TOTAL} اوردر در کل حساب)"
+                    nxt = "به‌محض آزاد شدن سهمیه، دوباره چیده می‌شود"
+                else:
+                    why = f"دیگر در فهرست زون‌های معتبر نیست — {notes.get(b, 'شرایط بازار عوض شد')}"
+                    nxt = "اگر شرایط دوباره سبز شود و زون معتبر بماند، دوباره بررسی می‌شود"
+                cancel_order(b, o, why=why, next_action=nxt,
+                             filters=filters_txt.get(b, ""), broker_name=name)
+
+        # اگر وزن سشن عوض شده باشد، سفارش موجود با حجم متناسبِ سشن جدید دوباره چیده می‌شود
+        if SESSION_REPLACE_ORDERS and USE_SESSION_WEIGHTS:
+            si_ = mt5.symbol_info(name)
+            acc_ = mt5.account_info()
+            w_now, sess_now = current_session_weight()
+            for cm, o in list(existing.items()):
+                p = desired.get(cm)
+                if p is None or si_ is None or acc_ is None:
+                    continue
+                risk_amt_ = acc_.equity * (1.0 - RESERVE) * RISK_PER_TRADE * w_now
+                target, _ = calc_volume(name, si_, p["direction"],
+                                        round(p["entry"], si_.digits), round(p["sl"], si_.digits),
+                                        risk_amt_, acc_.equity)
+                # توجه: در متاتریدر، «سفارش» فیلد volume_current دارد و «پوزیشن» فیلد volume
+                cur_vol = float(getattr(o, "volume_current", 0) or 0)
+                if target is None or cur_vol <= 0:
+                    continue
+                if abs(target - cur_vol) / cur_vol > SESSION_REPLACE_TOLERANCE:
+                    cancel_order(b, o,
+                                 why=f"وزن ریسک سشن عوض شد → سشن فعلی: {sess_now} (ضریب {w_now:g}) | "
+                                     f"حجم فعلی {o.volume_current} → حجم درست {target}",
+                                 next_action="بلافاصله با حجم متناسب سشن جدید دوباره چیده می‌شود",
+                                 filters=filters_txt.get(b, ""), broker_name=name)
+                    existing.pop(cm, None)
+
+        placed_something = False
+        for zid, p in desired.items():
+            if zid in existing:
+                continue
+            if len(my_positions) >= MAX_OPEN_TOTAL:
+                log(f"⏸️ زون {zid}: سقف {MAX_OPEN_TOTAL} ترید باز حساب پر است — فعلاً سفارش جدید نمی‌گذارم.", b)
+                continue
+            if place_pending(b, name, p):
+                placed_something = True
+
+        # گزارش وضعیت هر چارت — فقط وقتی وضعیت نسبت به دفعه‌ی قبل عوض شده باشد
+        note = notes.get(b, "")
+        n_open_sym = len([p for p in my_positions if p.symbol == name])
+        if not all_wanted.get(b):
+            if note == "فیلترها سبزند":
+                why = "فیلترها سبزند ولی زون معتبرِ لمس‌نشده‌ای نزدیک قیمت نیست"
+            else:
+                why = note
+            msg = f"⛔ معامله نمی‌کند | دلیل: {why} | اوردر فعال: {len(existing)} | ترید باز: {n_open_sym}"
+        elif not desired:
+            msg = (f"⏸️ زون آماده دارد ولی سهمیه‌ی اوردر (سقف {MAX_PENDING_TOTAL} کل حساب) پر است | "
+                   f"زون‌های واجد شرایط: {len(all_wanted.get(b, []))}")
+        elif not placed_something:
+            msg = f"✔️ بدون تغییر | اوردر فعال: {len(existing)} | ترید باز: {n_open_sym} | وضعیت فیلترها: {note}"
+        else:
+            msg = None
+
+        if msg is not None:
+            if _last_note.get(b) != msg:
+                _last_note[b] = msg
+                log(msg, b)
+            else:
+                console(f"{b} | (بدون تغییر) {msg}")   # فقط در CMD، نه در بله
+
+    log(f"همگام‌سازی کامل شد ({reason_txt}) | اوردرهای تخصیص‌یافته: {total} از سقف {MAX_PENDING_TOTAL}")
+
+
+# ---------------- سلامت‌سنجی و اعلام وضعیت ----------------
+def console(msg):
+    """چاپ فقط در CMD (بدون نوشتن در فایل — که فایل لاگ شلوغ نشود)."""
+    stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{stamp}] {msg}", flush=True)
+
+
+_market_closed = [False]
+
+def market_is_open(symbols):
+    """تشخیص باز/بسته بودن بازار از روی تازگی آخرین تیک قیمت.
+    اگر برای همه‌ی نمادها بیش از ۵ دقیقه تیک نیامده باشد، بازار تعطیل است."""
+    now = _time.time()
+    fresh = 0
+    checked = 0
+    for name in symbols.values():
+        tk = mt5.symbol_info_tick(name)
+        if tk is None or tk.time == 0:
+            continue
+        checked += 1
+        if now - tk.time < 300:
+            fresh += 1
+    if checked == 0:
+        return True   # نتوانستیم بسنجیم → مانع کار نمی‌شویم
+    return fresh > 0
+
+
+def health_check():
+    """همه‌ی پیش‌نیازها را می‌سنجد؛ لیست مشکلات را برمی‌گرداند (خالی = همه‌چیز سالم)."""
+    ti = mt5.terminal_info()
+    if ti is None:
+        return None  # اتصال به خود متاتریدر قطع است — ensure_connected حلش می‌کند
+    problems = []
+    if not ti.connected:
+        problems.append("متاتریدر به سرور بروکر وصل نیست (اینترنت یا سرور بروکر قطع است)!")
+    if not ti.trade_allowed:
+        problems.append("دکمه‌ی Algo Trading خاموش شده! تا روشنش نکنی هیچ سفارشی ارسال نمی‌شود!")
+    if mt5.account_info() is None:
+        problems.append("اطلاعات حساب در دسترس نیست — لاگین حساب قطع شده؟")
+    return problems
+
+
+_status_cycle = 0
+
+def report_status():
+    """هر ۳۰ ثانیه در CMD اعلام سلامت می‌کند؛ هر ~۵ دقیقه یک بار هم در فایل لاگ."""
+    global _status_cycle
+    try:
+        n_orders = len([o for o in (mt5.orders_get() or ()) if o.magic == MAGIC])
+        n_open = len([p for p in (mt5.positions_get() or ()) if p.magic == MAGIC])
+        msg = (f"🟢 ربات در حال اجراست | همه‌چیز سالم است | "
+               f"اوردرهای در انتظار: {n_orders} | تریدهای باز: {n_open}")
+        console(msg)
+        _status_cycle += 1
+        if _status_cycle >= 10:
+            _status_cycle = 0
+            log(msg)
+    except Exception:
+        pass
+
+
+# ---------------- گزارش روزانه‌ی درصدی ----------------
+_daily_file = os.path.join(LOG_DIR, "last_daily.txt")
+
+def _pct_txt(pct):
+    if pct > 0.005:
+        return f"{pct:+.2f}٪ در سود"
+    if pct < -0.005:
+        return f"{pct:+.2f}٪ در ضرر"
+    return "سربه‌سر (0.0٪)"
+
+
+def daily_report(symbols_rev):
+    """وضعیت همه‌ی تریدهای باز به «درصدِ حساب» + برایند کل — در یک پیام."""
+    acc = mt5.account_info()
+    if acc is None or acc.balance <= 0:
+        return
+    poss = [p for p in (mt5.positions_get() or ()) if p.magic == MAGIC]
+    lines = ["📊 گزارش روزانه‌ی حساب"]
+
+    if poss:
+        for p in poss:
+            b = symbols_rev.get(p.symbol, p.symbol)
+            side = "خرید" if p.type == mt5.POSITION_TYPE_BUY else "فروش"
+            pct = (p.profit + p.swap) / acc.balance * 100.0
+            lines.append(f"{b} ({side}): {_pct_txt(pct)}")
+    else:
+        lines.append("هیچ ترید بازی نیست.")
+
+    total_open = (acc.equity - acc.balance) / acc.balance * 100.0
+    lines.append(f"— برایند تریدهای باز: {_pct_txt(total_open)}")
+
+    # معاملات بسته‌شده‌ی ۲۴ ساعت اخیر
+    try:
+        frm = dt.datetime.now() - dt.timedelta(days=1)
+        deals = mt5.history_deals_get(frm, dt.datetime.now() + dt.timedelta(days=1)) or ()
+        outs = [d for d in deals if d.magic == MAGIC and d.entry == mt5.DEAL_ENTRY_OUT]
+        if outs:
+            pnl = sum(d.profit + d.swap + d.commission for d in outs)
+            lines.append(f"— بسته‌شده‌های ۲۴ ساعت اخیر: {len(outs)} معامله ({_pct_txt(pnl / acc.balance * 100.0)})")
+    except Exception:
+        pass
+
+    n_orders = len([o for o in (mt5.orders_get() or ()) if o.magic == MAGIC])
+    lines.append(f"— اوردرهای در انتظار: {n_orders}")
+    lines.append(f"— بالانس: {acc.balance:,.0f} | اکویتی: {acc.equity:,.0f} {acc.currency}")
+    log("\n".join(lines))
+
+
+def _marker_differs(fname, key):
+    """جلوگیری از ارسال تکراری گزارش‌ها (حتی بعد از ری‌استارت)."""
+    path = os.path.join(LOG_DIR, fname)
+    try:
+        with open(path, encoding="utf-8") as f:
+            if f.read().strip() == key:
+                return False
+    except Exception:
+        pass
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(key)
+    except Exception:
+        pass
+    return True
+
+
+def period_report(symbols_rev, since, title):
+    """همه‌ی معاملات بسته‌شده‌ی یک دوره در یک پیام: نماد، تاریخ، خرید/فروش،
+    نتیجه (حد سود/حد ضرر)، درصد سود/ضرر — و در آخر برایند دوره و کل حساب."""
+    acc = mt5.account_info()
+    if acc is None or acc.balance <= 0:
+        return
+    try:
+        deals = mt5.history_deals_get(since, dt.datetime.now() + dt.timedelta(days=1)) or ()
+    except Exception:
+        deals = ()
+    outs = sorted([d for d in deals if d.magic == MAGIC and d.entry == mt5.DEAL_ENTRY_OUT],
+                  key=lambda d: d.time)
+
+    lines = [title]
+    wins = losses = 0
+    total_pct = 0.0
+    best = worst = None
+    for d in outs:
+        b = symbols_rev.get(d.symbol, d.symbol)
+        when = dt.datetime.fromtimestamp(d.time).strftime("%m/%d")
+        # معامله‌ی بستن، برعکسِ جهت پوزیشن است
+        side = "فروش" if d.type == mt5.DEAL_TYPE_BUY else "خرید"
+        if d.reason == mt5.DEAL_REASON_TP:
+            res = "حد سود ✅"
+        elif d.reason == mt5.DEAL_REASON_SL:
+            res = "حد ضرر ❌"
+        else:
+            res = "بسته شد"
+        pct = (d.profit + d.swap + d.commission) / acc.balance * 100.0
+        total_pct += pct
+        if pct > 0: wins += 1
+        else: losses += 1
+        if best is None or pct > best[1]: best = (b, pct)
+        if worst is None or pct < worst[1]: worst = (b, pct)
+        lines.append(f"{when} | {b} | {side} | {res} | {pct:+.2f}٪")
+
+    if not outs:
+        lines.append("در این دوره هیچ معامله‌ای بسته نشد.")
+    else:
+        lines.append(f"— تعداد: {len(outs)} | برد: {wins} | باخت: {losses}")
+        if best:
+            lines.append(f"— بهترین: {best[0]} ({best[1]:+.2f}٪) | بدترین: {worst[0]} ({worst[1]:+.2f}٪)")
+    lines.append(f"— برایند دوره: {_pct_txt(total_pct)}")
+    floating = (acc.equity - acc.balance) / acc.balance * 100.0
+    lines.append(f"— تریدهای بازِ فعلی: {_pct_txt(floating)}")
+    total_acc = (acc.equity - START_BALANCE) / START_BALANCE * 100.0
+    lines.append(f"— کل حساب از شروع: {_pct_txt(total_acc)} (اکویتی {acc.equity:,.0f} {acc.currency})")
+
+    text = "\n".join(lines)
+    log(text, bale=False)  # در فایل و CMD کامل ثبت شود
+    # ارسال به بله؛ اگر خیلی بلند بود چند تکه می‌شود که قیچی نشود
+    chunk = []
+    size = 0
+    for ln in lines:
+        if size + len(ln) > 3000 and chunk:
+            bale_send("\n".join(chunk))
+            chunk, size = [], 0
+        chunk.append(ln)
+        size += len(ln) + 1
+    if chunk:
+        bale_send("\n".join(chunk))
+
+
+def maybe_periodic_reports(symbols_rev):
+    """گزارش هفتگی (شنبه‌ها) و ماهانه (روز اول ماه)، رأس همان ساعت گزارش روزانه."""
+    now = dt.datetime.now()
+    if now.hour != DAILY_REPORT_HOUR:
+        return
+    if now.weekday() == 5:  # شنبه — هفته‌ی معاملاتی تمام شده
+        if _marker_differs("last_weekly.txt", now.strftime("%G-W%V")):
+            period_report(symbols_rev, now - dt.timedelta(days=7), "🗓 گزارش هفتگی معاملات")
+    if now.day == 1:
+        if _marker_differs("last_monthly.txt", now.strftime("%Y-%m")):
+            prev_month_start = (now.replace(day=1) - dt.timedelta(days=1)).replace(
+                day=1, hour=0, minute=0, second=0, microsecond=0)
+            period_report(symbols_rev, prev_month_start, "📅 گزارش ماهانه معاملات")
+
+
+def maybe_daily_report(symbols_rev):
+    """هر روز رأس ساعت تعیین‌شده، فقط یک بار (حتی بعد از ری‌استارت)."""
+    now = dt.datetime.now()
+    if now.hour != DAILY_REPORT_HOUR:
+        return
+    today = now.strftime("%Y-%m-%d")
+    try:
+        with open(_daily_file, encoding="utf-8") as f:
+            if f.read().strip() == today:
+                return
+    except Exception:
+        pass
+    try:
+        with open(_daily_file, "w", encoding="utf-8") as f:
+            f.write(today)
+    except Exception:
+        pass
+    daily_report(symbols_rev)
+
+
+# ---------------- سقف تریدهای باز: پر شد → اوردرها موقتاً جمع می‌شوند ----------------
+_cap_active = False
+
+def enforce_open_cap(symbols_rev):
+    """اگر تعداد تریدهای باز به سقف رسید، همه‌ی اوردرهای در انتظار جمع می‌شوند؛
+    وقتی دوباره زیر سقف آمد، اعلام می‌کند تا اوردرها دوباره چیده شوند."""
+    global _cap_active
+    my_open = [p for p in (mt5.positions_get() or ()) if p.magic == MAGIC]
+    my_orders = [o for o in (mt5.orders_get() or ()) if o.magic == MAGIC]
+
+    if len(my_open) >= MAX_OPEN_TOTAL:
+        if my_orders:
+            log(f"🚧 سقف {MAX_OPEN_TOTAL} ترید باز پر شد — {len(my_orders)} اوردر در انتظار موقتاً جمع می‌شود.")
+            for o in my_orders:
+                cancel_order(symbols_rev.get(o.symbol, o.symbol), o,
+                             why=f"سقف {MAX_OPEN_TOTAL} تریدِ بازِ هم‌زمان پر شد — برای کنترل ریسک کل حساب",
+                             next_action=f"به‌محض اینکه تعداد تریدهای باز زیر {MAX_OPEN_TOTAL} برگردد، دوباره چیده می‌شود")
+        _cap_active = True
+        return "capped"
+
+    if _cap_active:
+        _cap_active = False
+        log(f"✅ تعداد تریدهای باز زیر {MAX_OPEN_TOTAL} برگشت — اوردرها دوباره چیده می‌شوند.")
+        return "resync"
+    return "ok"
+
+
+# ---------------- سیو سود در 2R ----------------
+_managed_file = os.path.join(LOG_DIR, "managed_tickets.txt")
+
+def _load_managed():
+    try:
+        with open(_managed_file, encoding="utf-8") as f:
+            return set(int(x) for x in f.read().split() if x.strip().isdigit())
+    except Exception:
+        return set()
+
+_managed = _load_managed()
+
+def _mark_managed(ticket):
+    _managed.add(int(ticket))
+    try:
+        with open(_managed_file, "a", encoding="utf-8") as f:
+            f.write(f"{ticket}\n")
+    except Exception:
+        pass
+
+
+def manage_positions(symbols_rev):
+    """سیو سود: هر پوزیشنی که سودش به ۲ برابر ریسک رسید، نصف حجمش نقد می‌شود (یک بار)."""
+    if not MANAGE_PARTIAL:
+        return
+    for p in (mt5.positions_get() or ()):
+        if p.magic != MAGIC or p.ticket in _managed or p.sl <= 0:
+            continue
+        risk_dist = abs(p.price_open - p.sl)
+        if risk_dist <= 0:
+            continue
+        tick = mt5.symbol_info_tick(p.symbol)
+        si = mt5.symbol_info(p.symbol)
+        if tick is None or si is None:
+            continue
+
+        if p.type == mt5.POSITION_TYPE_BUY:
+            reached = tick.bid >= p.price_open + MANAGE_TRIGGER_R * risk_dist
+            close_type, close_price = mt5.ORDER_TYPE_SELL, tick.bid
+        else:
+            reached = tick.ask <= p.price_open - MANAGE_TRIGGER_R * risk_dist
+            close_type, close_price = mt5.ORDER_TYPE_BUY, tick.ask
+        if not reached:
+            continue
+
+        step = si.volume_step or 0.01
+        half = math.floor(p.volume * PARTIAL_FRAC / step) * step
+        if half < si.volume_min or (p.volume - half) < si.volume_min:
+            _mark_managed(p.ticket)
+            log(f"⚠️ سیو سود {p.comment}: حجم برای نصف کردن کافی نیست ({p.volume}) — کامل می‌ماند.",
+                symbols_rev.get(p.symbol, p.symbol))
+            continue
+
+        base = symbols_rev.get(p.symbol, p.symbol)
+        req = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": p.symbol,
+            "volume": round(half, 8),
+            "type": close_type,
+            "position": p.ticket,
+            "price": close_price,
+            "deviation": 50,
+            "magic": MAGIC,
+            "comment": "TP2-partial",
+        }
+        # حالت پرکردن را از نماد می‌گیریم؛ اگر رد شد، حالت‌های دیگر را هم امتحان می‌کنیم
+        res = None
+        tried = []
+        for fm in (pick_filling(si, True), mt5.ORDER_FILLING_FOK,
+                   mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN):
+            if fm in tried:
+                continue
+            tried.append(fm)
+            req["type_filling"] = fm
+            res = mt5.order_send(req)
+            if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+                break
+            if res is not None and res.retcode != 10030:  # فقط خطای «حالت پرکردن» ارزش تلاش دوباره دارد
+                break
+
+        if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+            _mark_managed(p.ticket)
+            log(f"💰 سیو سود انجام شد! زون {p.comment} | سود به ۲ برابر ریسک رسید — "
+                f"{round(half, 2)} لات از {p.volume} لات نقد شد؛ بقیه به سمت تارگت ادامه می‌دهد.", base)
+        else:
+            log(f"⚠️ سیو سود {p.comment} انجام نشد | کد {getattr(res, 'retcode', mt5.last_error())} — دور بعد دوباره تلاش می‌شود.", base)
+
+
+# ---------------- رصد پر شدن و بسته شدن معاملات ----------------
+_prev_positions = {}
+
+def track_positions(symbols_rev):
+    """پر شدن سفارش‌ها و بسته شدن پوزیشن‌ها را کشف و با دلیل لاگ می‌کند."""
+    global _prev_positions
+    cur = {p.ticket: p for p in (mt5.positions_get() or ()) if p.magic == MAGIC}
+
+    # پوزیشن‌های تازه = سفارشی پر شده
+    for tk, p in cur.items():
+        if tk not in _prev_positions:
+            base = symbols_rev.get(p.symbol, p.symbol)
+            side = "خرید" if p.type == mt5.POSITION_TYPE_BUY else "فروش"
+            log(f"🎯 سفارش پر شد! پوزیشن {side} باز شد | زون {p.comment} | حجم {p.volume} لات | "
+                f"قیمت ورود {p.price_open} | استاپ {p.sl} | تارگت {p.tp}", base)
+
+    # پوزیشن‌های حذف‌شده = معامله بسته شده
+    for tk, p in _prev_positions.items():
+        if tk not in cur:
+            base = symbols_rev.get(p.symbol, p.symbol)
+            acc = mt5.account_info()
+            bal = acc.balance if (acc and acc.balance > 0) else START_BALANCE
+            profit_txt, why = "", "بسته شد"
+            try:
+                frm = dt.datetime.now() - dt.timedelta(days=7)
+                deals = mt5.history_deals_get(frm, dt.datetime.now() + dt.timedelta(days=1), position=tk)
+                if deals:
+                    outs = [d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT]
+                    profit = sum(d.profit + d.swap + d.commission for d in outs)
+                    profit_txt = f" | نتیجه‌ی این معامله: {_pct_txt(profit / bal * 100.0)}"
+                    if outs:
+                        r = outs[-1].reason
+                        if r == mt5.DEAL_REASON_SL: why = "حد ضرر خورد"
+                        elif r == mt5.DEAL_REASON_TP: why = "حد سود خورد ✨"
+            except Exception:
+                pass
+            # برایند کل حساب از شروع + برایند تریدهای بازِ فعلی
+            total_txt = ""
+            if acc:
+                total = (acc.equity - START_BALANCE) / START_BALANCE * 100.0
+                floating = (acc.equity - acc.balance) / bal * 100.0
+                total_txt = (f" | برایند کل حساب: {_pct_txt(total)}"
+                             f" | تریدهای باز: {_pct_txt(floating)}")
+            log(f"🏁 معامله بسته شد ({why}) | زون {p.comment}{profit_txt}{total_txt}", base)
+
+    _prev_positions = cur
+
+
+# ---------------- حلقه‌ی اصلی ----------------
+def main():
+    log("========== شروع ربات (نسخه ۲ — دمو) ==========", bale=False)
+    log(f"سبد انتخابی ({len(BASKET)} نماد): {', '.join(BASKET)} — ربات فقط روی همین‌ها کار می‌کند.", bale=False)
+
+    # سبد ربات و سبد بک‌تست باید یکی باشند، وگرنه ربات چیزی معامله می‌کند که
+    # بک‌تست نشده و هر مقایسه‌ای بی‌معنی می‌شود. همان اول کار چک می‌شود.
+    bt_basket = [s for s in getattr(rb, "LIVE_BASKET_ORDER", BASKET)
+                 if s not in getattr(rb, "LIVE_EXCLUDE_SYMBOLS", [])]
+    if list(bt_basket) != list(BASKET):
+        only_live = [s for s in BASKET if s not in bt_basket]
+        only_bt = [s for s in bt_basket if s not in BASKET]
+        log("🛑 سبد ربات با سبد بک‌تست یکی نیست — ربات بالا نمی‌آید.", bale=True)
+        if only_live:
+            log(f"   فقط در ربات: {', '.join(only_live)}", bale=True)
+        if only_bt:
+            log(f"   فقط در بک‌تست: {', '.join(only_bt)}", bale=True)
+        if not only_live and not only_bt:
+            log("   نمادها یکی‌اند ولی ترتیبشان فرق دارد — ترتیب روی سهمیه‌بندی اثر دارد.", bale=True)
+        log("   BASKET در live_trader.py و LIVE_BASKET_ORDER در run_backtest.py را یکی کن.", bale=True)
+        bale_flush()
+        return
+    acc = connect_with_retry(bale_notify=False)
+
+    symbols = {}
+    for b in BASKET:
+        name = resolve_symbol(b)
+        if name is None:
+            log("⚠️ این نماد نزد بروکر پیدا نشد و کنار گذاشته شد!", b)
+        else:
+            symbols[b] = name
+            if name != b:
+                log(f"اسم نماد نزد بروکر: {name}", b, bale=False)
+    symbols_rev = {v: k for k, v in symbols.items()}
+    log(f"آماده | {len(symbols)} نماد فعال | ریسک هر معامله {RISK_PER_TRADE*100:.1f}٪ | "
+        f"حد سود {RR:g} برابر ریسک | ورود {abs(ENTRY_OFF)*100:.0f}٪ داخل زون | سقف {MAX_OPEN_TOTAL} پوزیشن", bale=False)
+
+    # پیام راه‌اندازی — با محافظ ضد اسپم: اگر ربات پشت‌سرهم ری‌استارت شود (کرش)،
+    # به‌جای پیام کامل، فقط یک هشدار کوتاه و حداکثر هر ۳۰ دقیقه یک بار می‌رود
+    startup_file = os.path.join(LOG_DIR, "last_startup.txt")
+    since = None
+    try:
+        with open(startup_file, encoding="utf-8") as f:
+            since = (dt.datetime.now() - dt.datetime.fromisoformat(f.read().strip())).total_seconds()
+    except Exception:
+        pass
+    try:
+        with open(startup_file, "w", encoding="utf-8") as f:
+            f.write(dt.datetime.now().isoformat())
+    except Exception:
+        pass
+
+    if since is not None and since < 600:
+        log(f"⚠️ ربات دوباره راه‌اندازی شد ({int(since)} ثانیه بعد از اجرای قبلی) — احتمال کرش! لاگ را چک کن.",
+            bale=(since > 1800))
+    else:
+        bale_send(
+            "🤖 ربات روشن شد\n"
+            f"حساب: {acc.login} ({acc.server}) | {'دمو' if acc.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO else 'واقعی'}\n"
+            f"بالانس: {acc.balance:,.0f} | اکویتی: {acc.equity:,.0f} {acc.currency}\n"
+            f"سبد: {len(symbols)} نماد ({', '.join(symbols)})\n"
+            f"ریسک {RISK_PER_TRADE*100:.1f}٪ | حد سود {RR:g}R | ورود {abs(ENTRY_OFF)*100:.0f}٪ زون | "
+            f"سقف: هر چارت ۳، کل {MAX_OPEN_TOTAL}"
+        )
+
+    last_bar = {b: None for b in symbols}
+
+    sync_all(symbols, "شروع ربات")
+    for b, name in symbols.items():
+        try:
+            bar = mt5.copy_rates_from_pos(name, mt5.TIMEFRAME_H4, 1, 1)
+            if bar is not None and len(bar):
+                last_bar[b] = int(bar[0]["time"])
+        except Exception as e:
+            log(f"❌ خطا در بررسی اولیه: {e}", b)
+
+    log("در حال کار... با هر کندل ۴ ساعته‌ی جدید همه‌چیز به‌روز می‌شود. (توقف: Ctrl+C)")
+    _last_problems = [set()]
+    while True:
+        try:
+            ensure_connected()
+
+            # سلامت‌سنجی هر دور: مشکل جدید → داد بلند (لاگ + بله)؛ مشکل تکراری → فقط CMD
+            problems = health_check()
+            if problems:
+                pset = set(problems)
+                if pset != _last_problems[0]:
+                    for pr in problems:
+                        log(f"🚨 {pr}")
+                    _last_problems[0] = pset
+                else:
+                    for pr in problems:
+                        console(f"🚨 {pr}")
+                heartbeat("مشکل: " + " | ".join(problems))
+                _time.sleep(POLL_SECONDS)
+                continue
+            elif _last_problems[0]:
+                _last_problems[0] = set()
+                log("🟢 مشکل برطرف شد — همه‌چیز دوباره سالم است و ربات ادامه می‌دهد.")
+
+            # بازار تعطیل؟ فقط یک بار اعلام کن و منتظر بمان
+            if not market_is_open(symbols):
+                if not _market_closed[0]:
+                    _market_closed[0] = True
+                    log("🌙 بازار تعطیل است — ربات بیدار است و منتظر باز شدن بازار می‌ماند "
+                        "(سفارش‌ها و پوزیشن‌ها دست‌نخورده‌اند).")
+                heartbeat("بازار تعطیل — منتظر")
+                console("🌙 بازار تعطیل است | ربات سالم و در حال انتظار")
+                _time.sleep(POLL_SECONDS)
+                continue
+            elif _market_closed[0]:
+                _market_closed[0] = False
+                log("☀️ بازار باز شد — ربات دوباره شروع به کار کرد.")
+                sync_all(symbols, "باز شدن بازار")
+
+            cap_state = enforce_open_cap(symbols_rev)
+            if cap_state == "resync":
+                sync_all(symbols, "آزاد شدن سقف تریدهای باز")
+
+            # کندل ۴ ساعته‌ی جدید در هر نمادی → یک همگام‌سازی کامل و عادلانه برای همه
+            new_candle = []
+            for b, name in symbols.items():
+                try:
+                    bar = mt5.copy_rates_from_pos(name, mt5.TIMEFRAME_H4, 1, 1)
+                    if bar is None or len(bar) == 0:
+                        continue
+                    t = int(bar[0]["time"])
+                    if last_bar[b] is None or t > last_bar[b]:
+                        last_bar[b] = t
+                        new_candle.append(b)
+                except Exception as e:
+                    log(f"❌ خطا در چک کندل این نماد: {e}", b)
+            if new_candle:
+                log(f"کندل ۴ ساعته‌ی جدید بسته شد ({', '.join(new_candle)}) — بررسی دوباره‌ی همه‌ی زون‌ها و فیلترها...")
+                sync_all(symbols, "کندل جدید")
+
+            manage_positions(symbols_rev)
+            track_positions(symbols_rev)
+            maybe_daily_report(symbols_rev)
+            maybe_periodic_reports(symbols_rev)
+            report_status()
+            bale_flush()  # پیام‌های مانده در صف بله، هر دور دوباره تلاش می‌شوند
+            heartbeat("سالم")
+            _time.sleep(POLL_SECONDS)
+
+        except KeyboardInterrupt:
+            log("⏹️ توقف دستی (Ctrl+C). سفارش‌ها و پوزیشن‌ها داخل متاتریدر دست‌نخورده می‌مانند "
+                "(استاپ و تارگت روی خود سفارش‌هاست و سرور بروکر اجرایشان می‌کند).")
+            break
+        except Exception as e:
+            log(f"❌ خطای غیرمنتظره: {e} — ربات خاموش نمی‌شود و ادامه می‌دهد.")
+            heartbeat(f"خطا: {e}")
+            _time.sleep(POLL_SECONDS)
+
+    mt5.shutdown()
+
+
+if __name__ == "__main__":
+    main()
