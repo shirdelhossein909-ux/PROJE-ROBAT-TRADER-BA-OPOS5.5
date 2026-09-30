@@ -20,7 +20,7 @@ END = pd.Timestamp("2026-09-26")
 def main():
     frames = {}
     for s in BASKET:
-        h4, d1, w1, _ = rb.load_timeframes_from_zip(os.path.join(REPO, "دیتا_هفتگی", f"{s}.zip"))
+        h4, d1, w1, _ = rb.load_timeframes_from_zip(os.path.join(REPO, "دیتا_هفتگی", f"{s}.zip"), tf_set="H4")
         if s == "EURCAD":
             h4 = h4[h4["time"] < pd.Timestamp("2026-09-22 20:00")].reset_index(drop=True)
             d1 = d1[d1["time"] < pd.Timestamp("2026-09-22")].reset_index(drop=True)

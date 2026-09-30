@@ -59,7 +59,7 @@ def load():
         st = pickle.load(f)
     bars = {}
     for s in BASKET:
-        h4, _, _, _ = rb.load_timeframes_from_zip(os.path.join(REPO, "دیتا_هفتگی", f"{s}.zip"))
+        h4, _, _, _ = rb.load_timeframes_from_zip(os.path.join(REPO, "دیتا_هفتگی", f"{s}.zip"), tf_set="H4")
         if s == "EURCAD":
             h4 = h4[h4["time"] < pd.Timestamp("2026-09-22 20:00")]
         bars[s] = {pd.Timestamp(r.time): (r.open, r.high, r.low, r.close) for r in h4.itertuples()}

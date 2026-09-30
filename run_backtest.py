@@ -7,6 +7,23 @@ from analysis_distribution import distribution_sheets
 import pandas as pd
 
 # ============================================================================
+# تایم‌فریم‌های استراتژی — باید با فایل‌های داخل ZIPهای دیتا یکی باشد
+# ============================================================================
+# همان استراتژی (زون، فیلتر روند/رنج، زون بزرگ مخالف) روی یکی از این دو دسته اجرا می‌شود:
+#   "H4"  → زون و ورود روی ۴ساعته، روند/رنج روزانه، زون بزرگ هفتگی
+#           فایل‌های لازم در ZIP:  -240.csv  -1D.csv  -1W.csv      (همان ربات لایو فعلی)
+#   "M15" → زون و ورود روی ۱۵دقیقه، روند/رنج ۱ساعته، زون بزرگ ۴ساعته
+#           فایل‌های لازم در ZIP:  -15.csv   -60.csv  -240.csv
+# برای ترتیب اتفاقات داخل کندل، ریزترین فایلِ ریزتر از تایم زون (مثلاً -5 یا -1) خودکار خوانده می‌شود.
+# (ربات لایو همیشه روی H4 کار می‌کند و این تنظیم رویش اثری ندارد.)
+STRATEGY_TF = "M15"
+TF_SETS = {
+    #        (فایل زون، فایل روند، فایل زون بزرگ)
+    "H4":  ("240", "1D", "1W"),
+    "M15": ("15", "60", "240"),
+}
+
+# ============================================================================
 # واقع‌بینی بک‌تست (اصلاح خوش‌بینی‌ها — بعد از مقایسه با ۶ هفته لایو)
 # ============================================================================
 # بک‌تستر فقط کندل ۴ساعته را می‌بیند و ترتیب اتفاقات داخل کندل را نمی‌داند.
@@ -38,6 +55,7 @@ MODEL_BID_ASK = True
 
 # دیتای تایم‌فریم پایین‌تر برای دیدن ترتیب واقعی اتفاقات داخل کندل ۴ساعته.
 # اگر داخل ZIP هر نماد فایل «-1.csv» یا «-5.csv» یا «-15.csv» (یا M1/M5/M15) باشد، ریزترینش
+# (فقط اگر از تایم زون ریزتر باشد؛ برای STRATEGY_TF="M15" یعنی فقط «-1» یا «-5»)
 # خوانده می‌شود و پر شدن، سیو سود، استاپ و تارگت کندل‌به‌کندل روی آن شبیه‌سازی می‌شود.
 # اگر نباشد، ENTRY_BAR_MODE استفاده می‌شود. (نام متغیر به‌خاطر سازگاری همان USE_M15 مانده)
 USE_M15 = True
@@ -171,11 +189,11 @@ DESIGN_VARIANTS = {
     "خروج_قوی": ({"min_departure_atr": 1.0},
                  "فقط زونی که کندل خروجش قوی است: بدنه‌ی کندل تأیید ≥ ۱ برابر ATR"),
     "جای_تا_زون_مخالف": ({"min_room_r": 3.0},
-                         "فاصله‌ی ورود تا نزدیک‌ترین زون مخالف (H4 یا هفتگی) ≥ ۳ برابر ریسک"),
+                         "فاصله‌ی ورود تا نزدیک‌ترین زون مخالف (تایم زون یا تایم زون بزرگ) ≥ ۳ برابر ریسک"),
     "حداقل_اندازه_زون": ({"min_risk_spread": 8.0},
                          "فاصله‌ی ورود تا استاپ ≥ ۸ برابر اسپرد نماد (زون‌های ریز حذف)"),
     "محل_زون_تایم_بالا": ({"htf_location": True},
-                          "فقط زون ۴ساعته‌ای که روی یک زون روزانه یا هفتگیِ هم‌جهت قرار دارد"),
+                          "فقط زونی که روی یک زون هم‌جهت در تایم روند یا تایم زون بزرگ قرار دارد"),
     "ورود_لبه_زون": ({"entry_off": 0.0},
                      "ورود روی لبه‌ی نزدیک زون (پراکسیمال) به‌جای وسط زون"),
     "همه_با_هم": ({"min_departure_atr": 1.0, "min_room_r": 3.0, "min_risk_spread": 8.0,
@@ -362,44 +380,62 @@ def read_mt_csv_from_bytes(b: bytes) -> pd.DataFrame:
         raise ValueError("هیچ سطر معتبری در CSV پیدا نشد (فرمت ناشناخته).")
     return out
 
-def load_timeframes_from_zip(zip_path: str):
+_LTF_MINUTES = {"1": 1, "5": 5, "15": 15, "30": 30, "60": 60}
+
+
+def _suffix_minutes(label):
+    if label in _LTF_MINUTES:
+        return _LTF_MINUTES[label]
+    return {"240": 240, "1D": 1440, "1W": 10080}.get(label, 10 ** 9)
+
+
+def load_timeframes_from_zip(zip_path: str, tf_set=None):
+    """خواندن سه تایم‌فریم استراتژی (+ تایم ریزتر اختیاری) از ZIP یک نماد.
+
+    خروجی: (زون، روند، زون بزرگ، تایم ریزتر یا None) — برای سازگاری با بقیه‌ی کد، اسم
+    متغیرها همان h4, d1, w1, m15 مانده ولی بسته به STRATEGY_TF می‌تواند M15/H1/H4 باشد."""
     if not os.path.exists(zip_path):
         raise FileNotFoundError(f"فایل ZIP پیدا نشد: {zip_path}")
+    key = tf_set or STRATEGY_TF
+    if key not in TF_SETS:
+        raise ValueError(f"STRATEGY_TF نامعتبر است: {key} — مجاز: {', '.join(TF_SETS)}")
+    lab_zone, lab_trend, lab_big = TF_SETS[key]
 
     with zipfile.ZipFile(zip_path, "r") as z:
         names = z.namelist()
         if not names:
             raise ValueError(f"فایل ZIP خالی است: {zip_path}")
 
-        f240_list = [n for n in names if n.endswith("-240.csv")]
-        f1d_list  = [n for n in names if n.endswith("-1D.csv")]
-        f1w_list  = [n for n in names if n.endswith("-1W.csv")]
-        # تایم‌فریم پایین‌تر (اختیاری) — ریزترینِ موجود: M1، بعد M5، بعد M15
+        def find(label):
+            return [n for n in names if n.endswith(f"-{label}.csv")]
+
+        fz, ft, fb = find(lab_zone), find(lab_trend), find(lab_big)
+        if not fz or not ft or not fb:
+            raise ValueError(
+                f"داخل ZIP فایل‌های لازم برای STRATEGY_TF=\"{key}\" پیدا نشد: {zip_path} | "
+                f"{lab_zone}={len(fz)} {lab_trend}={len(ft)} {lab_big}={len(fb)} — "
+                f"یا دیتای همین تایم‌فریم‌ها را بگیر یا STRATEGY_TF را عوض کن."
+            )
+
+        # تایم‌فریم ریزتر (اختیاری) — ریزترینِ موجود که از تایم زون ریزتر باشد
         f15_list = []
-        for suf in ("1", "5", "15"):
+        zone_min = _suffix_minutes(lab_zone)
+        for suf in ("1", "5", "15", "30", "60"):
+            if _LTF_MINUTES[suf] >= zone_min:
+                break
             f15_list = [n for n in names if n.endswith(f"-{suf}.csv") or n.endswith(f"-M{suf}.csv")]
             if f15_list:
                 break
 
-        if not f240_list or not f1d_list or not f1w_list:
-            raise ValueError(
-                f"داخل ZIP فایل‌های لازم پیدا نشد: {zip_path} | "
-                f"240={len(f240_list)} 1D={len(f1d_list)} 1W={len(f1w_list)}"
-            )
-
-        f240 = f240_list[0]
-        f1d = f1d_list[0]
-        f1w = f1w_list[0]
-
-        h4 = read_mt_csv_from_bytes(z.read(f240))
-        d1 = read_mt_csv_from_bytes(z.read(f1d))
-        w1 = read_mt_csv_from_bytes(z.read(f1w))
+        h4 = read_mt_csv_from_bytes(z.read(fz[0]))
+        d1 = read_mt_csv_from_bytes(z.read(ft[0]))
+        w1 = read_mt_csv_from_bytes(z.read(fb[0]))
         m15 = read_mt_csv_from_bytes(z.read(f15_list[0])) if f15_list else None
 
     if h4.empty or d1.empty or w1.empty:
         raise ValueError(
             f"داده‌ی یکی از تایم‌فریم‌ها داخل ZIP خالی است: {zip_path} | "
-            f"h4={len(h4)} d1={len(d1)} w1={len(w1)}"
+            f"زون={len(h4)} روند={len(d1)} بزرگ={len(w1)}"
         )
 
     return h4, d1, w1, m15
@@ -664,7 +700,12 @@ def init_zone_table(h_z):
             "زمان_خروج": None,
             "نتیجه_R": None
         })
-    return pd.DataFrame(rows)
+    # اگر هیچ زونی ساخته نشده باشد، جدول باید باز هم ستون‌هایش را داشته باشد (وگرنه کرش می‌کند)
+    cols = ["ZoneID", "نماد", "تایم‌فریم", "جهت", "تاریخ_ایجاد", "پراکسیمال", "دیستال",
+            "بیس_شروع", "بیس_پایان", "دوجی_شدو", "Touch1", "Touch2", "تعداد_تست",
+            "FinalStatus", "FinalReason", "FinalTime", "زمان_ثبت_سفارش", "زمان_پرشدن",
+            "زمان_خروج", "نتیجه_R"]
+    return pd.DataFrame(rows, columns=cols)
 
 def zone_row_index(zone_df):
     """نگاشت ZoneID به شماره‌ی سطر — تا جست‌وجوی زون O(1) شود.
@@ -817,13 +858,47 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
     h4["trend"] = trend_from_swings(h4, n=1)  # همین حالا بدون lookahead شده چون trend_from_swings را عوض کردی
     d1["trend"] = trend_from_swings(d1, n=1)
 
-    w_z = dedup_zones_pit(build_zones(w1, symbol, "W1", 12, w1["atr"]))
-    h_z = dedup_zones_pit(build_zones(h4, symbol, "H4", 6,  h4["atr"]))
+    # طول کندل هر تایم‌فریم از خود دیتا (میانه‌ی فاصله‌ی کندل‌ها) — برای دسته‌ی H4 همان
+    # ۴ ساعت، ۱ روز و ۷ روز است؛ برای دسته‌ی M15 می‌شود ۱۵ دقیقه، ۱ ساعت و ۴ ساعت.
+    def _span(df, default):
+        dd = df["time"].diff().dropna()
+        return pd.Timedelta(dd.median()) if len(dd) else default
+    zone_span = _span(h4, pd.Timedelta(hours=4))
+    trend_span = _span(d1, pd.Timedelta(days=1))
+    big_span = _span(w1, pd.Timedelta(days=7))
+    _mins = int(zone_span / pd.Timedelta(minutes=1))
+    zone_tf = {1: "M1", 5: "M5", 15: "M15", 30: "M30", 60: "H1", 240: "H4", 1440: "D1"}.get(_mins, f"{_mins}m")
+
+    w_z = dedup_zones_pit(build_zones(w1, symbol, "BIG", 12, w1["atr"]))
+    h_z = dedup_zones_pit(build_zones(h4, symbol, zone_tf, 6,  h4["atr"]))
 
     # ZoneID
     h_z = sorted(h_z, key=lambda z: z.created_time)
     for idx, z in enumerate(h_z, start=1):
-        z.zone_id = f"{symbol}_H4_{idx:05d}"
+        z.zone_id = f"{symbol}_{zone_tf}_{idx:05d}"
+
+    # ---------- زون‌های بزرگ به‌صورت آرایه (سرعت) ----------
+    # «معتبر در لحظه‌ی t» = کندل تأییدش بسته شده (created + big_span <= t) و هنوز جایگزین نشده.
+    # قبلاً در هر کندل کل فهرست با محاسبه‌ی کُند تاریخ گشته می‌شد؛ نتیجه دقیقاً همان است.
+    _NEVER = np.datetime64("2262-01-01", "ns")
+    _wz_from = np.array([np.datetime64(pd.Timestamp(wz.created_time) + big_span, "ns") for wz in w_z],
+                        dtype="datetime64[ns]")
+    _wz_sup = np.array([np.datetime64(pd.Timestamp(wz.superseded_time), "ns") if wz.superseded_time is not None
+                        else _NEVER for wz in w_z], dtype="datetime64[ns]")
+    _wz_low = np.array([wz.low() for wz in w_z], dtype=float)
+    _wz_high = np.array([wz.high() for wz in w_z], dtype=float)
+    _wz_buy = np.array([wz.direction == "BUY" for wz in w_z], dtype=bool)
+
+    def big_valid_mask(t_now):
+        tt = np.datetime64(pd.Timestamp(t_now), "ns")
+        return (_wz_from <= tt) & (tt < _wz_sup)
+
+    def big_body_hits(t_now, o_, c_):
+        """بدنه‌ی کندل (o_, c_) با یک زون بزرگِ معتبر تقاضا/عرضه برخورد دارد؟ → {"BUY": .., "SELL": ..}"""
+        if not len(w_z):
+            return {"BUY": False, "SELL": False}
+        m = big_valid_mask(t_now) & (max(o_, c_) >= _wz_low) & (min(o_, c_) <= _wz_high)
+        return {"BUY": bool((m & _wz_buy).any()), "SELL": bool((m & ~_wz_buy).any())}
 
     # ---------- فیلترهای آزمایش طراحی (پیش‌فرض همه خاموش؛ ربات لایو را عوض نمی‌کنند) ----------
     # اسپرد مرجع برای «حداقل اندازه‌ی زون»: ربات لایو اسپرد را صفر می‌دهد، پس از جدول خوانده می‌شود
@@ -833,8 +908,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
     # محل زون روی تایم بالاتر: برای هر زون H4، زون‌های روزانه/هفتگیِ هم‌جهتی که با آن هم‌پوشانی دارند
     htf_overlaps = {}
     if htf_location:
-        d_z = dedup_zones_pit(build_zones(d1, symbol, "D1", 6, d1["atr"]))
-        htf_all = [(hz, pd.Timedelta(days=1)) for hz in d_z] + [(hz, pd.Timedelta(days=7)) for hz in w_z]
+        d_z = dedup_zones_pit(build_zones(d1, symbol, "TREND", 6, d1["atr"]))
+        htf_all = [(hz, trend_span) for hz in d_z] + [(hz, big_span) for hz in w_z]
         for z in h_z:
             htf_overlaps[id(z)] = [(hz, lag) for hz, lag in htf_all
                                    if hz.direction == z.direction
@@ -847,19 +922,30 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 return True
         return False
 
-    def room_levels(t_now, ref_price, zones_now):
+    def room_levels(t_now, ref_price, zones_k):
         """نزدیک‌ترین زون عرضه‌ی بالای قیمت و نزدیک‌ترین زون تقاضای زیر قیمت (H4 و هفتگی).
-        زون مخالفی که قیمت از آن عبور کرده (آن طرف قیمت است) حساب نمی‌شود."""
+        زون مخالفی که قیمت از آن عبور کرده (آن طرف قیمت است) حساب نمی‌شود.
+        zones_k: شماره‌ی زون‌های زنده (باطل‌نشده) در h_z."""
         sup_low = dem_high = None
-        pool = [z2 for z2 in zones_now
-                if not z2.expired and (z2.superseded_time is None or t_now < z2.superseded_time)]
-        pool += [wz for wz in w_z if wz.created_time + pd.Timedelta(days=7) <= t_now
-                 and (wz.superseded_time is None or t_now < wz.superseded_time)]
-        for z2 in pool:
-            if z2.direction == "SELL" and z2.low() >= ref_price:
-                sup_low = z2.low() if sup_low is None else min(sup_low, z2.low())
-            elif z2.direction == "BUY" and z2.high() <= ref_price:
-                dem_high = z2.high() if dem_high is None else max(dem_high, z2.high())
+        zk = np.asarray(zones_k, dtype=np.int64)
+        if len(zk):
+            m = _Z_SUP[zk] > pd.Timestamp(t_now).value
+            s_ = m & ~_Z_BUY[zk] & (_Z_LO[zk] >= ref_price)
+            if s_.any():
+                sup_low = float(_Z_LO[zk][s_].min())
+            b_ = m & _Z_BUY[zk] & (_Z_HI[zk] <= ref_price)
+            if b_.any():
+                dem_high = float(_Z_HI[zk][b_].max())
+        if len(w_z):
+            m = big_valid_mask(t_now)
+            s_ = m & ~_wz_buy & (_wz_low >= ref_price)
+            if s_.any():
+                v = float(_wz_low[s_].min())
+                sup_low = v if sup_low is None else min(sup_low, v)
+            b_ = m & _wz_buy & (_wz_high <= ref_price)
+            if b_.any():
+                v = float(_wz_high[b_].max())
+                dem_high = v if dem_high is None else max(dem_high, v)
         return sup_low, dem_high
 
     def design_block(z, levels, t_now):
@@ -957,7 +1043,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         m15_l = m15["low"].astype(float).values
         m15_c = m15["close"].astype(float).values
 
-    H4_SPAN = np.timedelta64(4, "h")
+    H4_SPAN = np.timedelta64(zone_span.value, "ns")     # طول کندل تایم زون
 
     def _m15_range(t_bar):
         if m15_t is None:
@@ -1161,7 +1247,92 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 log_event(events, t_now, symbol, z.zone_id, "Canceled", why_short)
         return n
 
-    used=set()
+    # ---------- آرایه‌های کمکیِ زون‌ها (فقط برای سرعت؛ منطق همان قبلی است) ----------
+    # در تایم‌فریم ۱۵ دقیقه، زون‌های زنده به هزاران عدد می‌رسند و پیمایش پایتونیِ همه‌شان
+    # در هر کندل بکتست را خیلی کند می‌کرد. حالا با numpy فقط زون‌هایی پیمایش می‌شوند که
+    # در همان کندل واقعاً اتفاقی برایشان می‌افتد. خود اشیای زون همچنان مرجع اصلی‌اند.
+    _nz = len(h_z)
+    _NEVER = np.iinfo(np.int64).max
+    _Z_LO = np.array([z.low() for z in h_z], dtype=float)
+    _Z_HI = np.array([z.high() for z in h_z], dtype=float)
+    _Z_DIST = np.array([z.distal for z in h_z], dtype=float)
+    _Z_BUY = np.array([z.direction == "BUY" for z in h_z], dtype=bool)
+    _Z_SUP = np.array([pd.Timestamp(z.superseded_time).value if z.superseded_time is not None else _NEVER
+                       for z in h_z], dtype=np.int64)
+    _Z_TC = np.zeros(_nz, dtype=np.int64)            # = touch_count
+    _Z_LTI = np.full(_nz, -10**9, dtype=np.int64)    # = last_touch_i (None → خیلی قدیم)
+    _Z_CAT = np.full(_nz, 999, dtype=np.int64)       # = clean_after_touch
+    _Z_USED = np.zeros(_nz, dtype=bool)              # = id(z) in used
+    _kmap = {id(z): k for k, z in enumerate(h_z)}
+
+    class _UsedSet(set):
+        """همان مجموعه‌ی used؛ فقط آرایه‌ی _Z_USED را هم هم‌زمان به‌روز نگه می‌دارد."""
+        def add(self, x):
+            set.add(self, x)
+            k = _kmap.get(x)
+            if k is not None:
+                _Z_USED[k] = True
+
+        def discard(self, x):
+            set.discard(self, x)
+            k = _kmap.get(x)
+            if k is not None:
+                _Z_USED[k] = False
+
+    used = _UsedSet()
+
+    def _touch_step(z, i, t, h, l, c_prev):
+        """لمس/انقضا/جایگزینی/شکست یک زون در یک کندل (بدنه‌ی قبلی حلقه، بدون تغییر)."""
+        # اگر زون جدیدِ هم‌پوشان آمده باشد، این زون از همان لحظه کنار می‌رود
+        if z.superseded_time is not None and t >= z.superseded_time:
+            z.expired=True
+            reasons["جایگزینی_زون"] += 1
+            # سفارش پرنشده‌ی این زون هم باید لغو شود (زون دیگر معتبر نیست)
+            reasons["لغو_سفارشِ_زون_باطل"] += cancel_orders_of_zone(
+                z, t, "SupersededZone", "لغو: زون جدید هم‌پوشان جایگزین شد")
+            set_final(zone_df, z.zone_id, "منقضی شد", "زون جدید هم‌پوشان جایگزین شد", t, idx=z_idx)
+            log_event(events, t, symbol, z.zone_id, "Superseded", "")
+            return
+
+        # زون شکسته باطل می‌شود: کندلِ بسته‌شده‌ی قبلی آن‌سوی دیستال‌لاین بسته شده باشد
+        # (زون‌هایی که قبلاً معامله یا رد شده‌اند شمرده نمی‌شوند تا آمار گمراه‌کننده نشود)
+        if invalidate_on_breach and id(z) not in used:
+            breached = (c_prev < z.distal) if z.direction == "BUY" else (c_prev > z.distal)
+            if breached:
+                z.expired = True
+                reasons["باطل_شدن_زون_شکسته"] += 1
+                reasons["لغو_سفارشِ_زون_باطل"] += cancel_orders_of_zone(
+                    z, t, "ZoneBreached", "لغو: قیمت زون را شکست")
+                set_final(zone_df, z.zone_id, "باطل شد", "قیمت از زون عبور کرد", t, idx=z_idx)
+                log_event(events, t, symbol, z.zone_id, "Breached", "")
+                return
+
+        touched = (h >= z.low() and l <= z.high())
+        if touched:
+            if z.touch_count==0:
+                z.touch_count=1; z.last_touch_i=i; z.clean_after_touch=0
+                _zset(z.zone_id, "Touch1", t); _zset(z.zone_id, "تعداد_تست", 1)
+                log_event(events, t, symbol, z.zone_id, "Touch1", "")
+            else:
+                if z.clean_after_touch>=3 and z.last_touch_i is not None and (i - z.last_touch_i) <= 50:
+                    z.touch_count += 1
+                    z.last_touch_i=i; z.clean_after_touch=0
+                    _zset(z.zone_id, "Touch2", t); _zset(z.zone_id, "تعداد_تست", z.touch_count)
+                    log_event(events, t, symbol, z.zone_id, "Touch2", f"تست={z.touch_count}")
+                else:
+                    z.clean_after_touch=0
+        else:
+            if z.touch_count>0:
+                z.clean_after_touch += 1
+
+        if z.touch_count==1 and z.last_touch_i is not None and (i - z.last_touch_i) > 50:
+            z.expired=True
+            reasons["انقضا_زون"] += 1
+            # سفارش پرنشده‌ی زون منقضی هم لغو می‌شود
+            reasons["لغو_سفارشِ_زون_باطل"] += cancel_orders_of_zone(
+                z, t, "ExpiredZone", "لغو: زون منقضی شد")
+            set_final(zone_df, z.zone_id, "منقضی شد", "Touch2 تا ۵۰ کندل نیامد", t, idx=z_idx)
+            log_event(events, t, symbol, z.zone_id, "Expired", "")
 
     # ستون‌های داغِ حلقه یک بار به numpy تبدیل می‌شوند. خواندن سطربه‌سطر از pandas
     # (h4["open"].iloc[i]) هر بار یک Series می‌سازد و در ده‌ها هزار کندل، بخش
@@ -1177,7 +1348,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
     # تاریخچه‌ی زون‌ها پیمایش می‌شد؛ با دیتای چندساله این هزینه مربعی می‌شد.
     # h_z از قبل بر اساس زمان تولد مرتب است، پس ترتیب پیمایش عوض نمی‌شود.
     _zptr = 0
-    live_zones = []
+    live_k = np.zeros(0, dtype=np.int64)     # شماره‌ی زون‌های زنده در h_z (به همان ترتیب تولد)
 
     for i in range(len(h4)):
         t=_t_a[i]
@@ -1217,78 +1388,51 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         open_pos = still_open
 
         # زون‌هایی که کندل تأییدشان بسته شده، از همین‌جا وارد فهرست زنده‌ها می‌شوند
+        _z0 = _zptr
         while _zptr < len(h_z) and h_z[_zptr].created_time < t:
-            live_zones.append(h_z[_zptr]); _zptr += 1
+            _zptr += 1
+        if _zptr > _z0:
+            live_k = np.concatenate([live_k, np.arange(_z0, _zptr, dtype=np.int64)])
 
         # ---------- touches + expiry (همان) ----------
-        for z in live_zones:
-            # زون از کندلِ بعد از تأییدش فعال می‌شود (کندل تأیید باید اول بسته شود)
-            if z.expired:
-                continue
-
-            # اگر زون جدیدِ هم‌پوشان آمده باشد، این زون از همان لحظه کنار می‌رود
-            if z.superseded_time is not None and t >= z.superseded_time:
-                z.expired=True
-                reasons["جایگزینی_زون"] += 1
-                # سفارش پرنشده‌ی این زون هم باید لغو شود (زون دیگر معتبر نیست)
-                reasons["لغو_سفارشِ_زون_باطل"] += cancel_orders_of_zone(
-                    z, t, "SupersededZone", "لغو: زون جدید هم‌پوشان جایگزین شد")
-                set_final(zone_df, z.zone_id, "منقضی شد", "زون جدید هم‌پوشان جایگزین شد", t, idx=z_idx)
-                log_event(events, t, symbol, z.zone_id, "Superseded", "")
-                continue
-
-            # زون شکسته باطل می‌شود: کندلِ بسته‌شده‌ی قبلی آن‌سوی دیستال‌لاین بسته شده باشد
-            # (زون‌هایی که قبلاً معامله یا رد شده‌اند شمرده نمی‌شوند تا آمار گمراه‌کننده نشود)
-            if invalidate_on_breach and id(z) not in used:
-                breached = (c_prev < z.distal) if z.direction == "BUY" else (c_prev > z.distal)
-                if breached:
-                    z.expired = True
-                    reasons["باطل_شدن_زون_شکسته"] += 1
-                    reasons["لغو_سفارشِ_زون_باطل"] += cancel_orders_of_zone(
-                        z, t, "ZoneBreached", "لغو: قیمت زون را شکست")
-                    set_final(zone_df, z.zone_id, "باطل شد", "قیمت از زون عبور کرد", t, idx=z_idx)
-                    log_event(events, t, symbol, z.zone_id, "Breached", "")
-                    continue
-
-            touched = (h >= z.low() and l <= z.high())
-            if touched:
-                if z.touch_count==0:
-                    z.touch_count=1; z.last_touch_i=i; z.clean_after_touch=0
-                    _zset(z.zone_id, "Touch1", t); _zset(z.zone_id, "تعداد_تست", 1)
-                    log_event(events, t, symbol, z.zone_id, "Touch1", "")
-                else:
-                    if z.clean_after_touch>=3 and z.last_touch_i is not None and (i - z.last_touch_i) <= 50:
-                        z.touch_count += 1
-                        z.last_touch_i=i; z.clean_after_touch=0
-                        _zset(z.zone_id, "Touch2", t); _zset(z.zone_id, "تعداد_تست", z.touch_count)
-                        log_event(events, t, symbol, z.zone_id, "Touch2", f"تست={z.touch_count}")
-                    else:
-                        z.clean_after_touch=0
-            else:
-                if z.touch_count>0:
-                    z.clean_after_touch += 1
-
-            if z.touch_count==1 and z.last_touch_i is not None and (i - z.last_touch_i) > 50:
-                z.expired=True
-                reasons["انقضا_زون"] += 1
-                # سفارش پرنشده‌ی زون منقضی هم لغو می‌شود
-                reasons["لغو_سفارشِ_زون_باطل"] += cancel_orders_of_zone(
-                    z, t, "ExpiredZone", "لغو: زون منقضی شد")
-                set_final(zone_df, z.zone_id, "منقضی شد", "Touch2 تا ۵۰ کندل نیامد", t, idx=z_idx)
-                log_event(events, t, symbol, z.zone_id, "Expired", "")
+        # فقط زون‌هایی که در این کندل لمس، جایگزین، شکسته یا منقضی می‌شوند پیمایش می‌شوند؛
+        # برای بقیه‌ی زون‌های لمس‌شده فقط یک «کندل تمیز» به شمارشان اضافه می‌شود — دقیقاً
+        # همان کاری که بدنه‌ی حلقه برایشان می‌کرد.
+        _exp_k = []
+        if len(live_k):
+            lk = live_k
+            tc = _Z_TC[lk]
+            att = (h >= _Z_LO[lk]) & (l <= _Z_HI[lk])
+            att |= _Z_SUP[lk] <= t.value
+            if invalidate_on_breach:
+                att |= np.where(_Z_BUY[lk], c_prev < _Z_DIST[lk], c_prev > _Z_DIST[lk]) & ~_Z_USED[lk]
+            att |= (tc == 1) & ((i - _Z_LTI[lk]) > 50)
+            _Z_CAT[lk[(~att) & (tc > 0)]] += 1
+            for k in lk[att]:
+                z = h_z[k]
+                z.clean_after_touch = int(_Z_CAT[k])
+                _touch_step(z, i, t, h, l, c_prev)
+                _Z_TC[k] = z.touch_count
+                if z.last_touch_i is not None:
+                    _Z_LTI[k] = z.last_touch_i
+                _Z_CAT[k] = z.clean_after_touch
+                if z.expired:
+                    _exp_k.append(k)
 
         # ---------- انتخاب زون‌های واجد شرایط (کاندیدای سفارش) ----------
         # زون‌هایی که از همه‌ی فیلترها رد شده‌اند اینجا فقط «کاندید» می‌شوند؛
         # اینکه واقعاً سفارششان روی حساب برود یا نه، به سهمیه بستگی دارد.
         # زون‌های باطل‌شده دیگر هرگز برنمی‌گردند، پس از فهرست زنده‌ها حذف می‌شوند
-        if any(z.expired for z in live_zones):
-            live_zones = [z for z in live_zones if not z.expired]
+        if _exp_k:
+            live_k = live_k[~np.isin(live_k, _exp_k)]
 
         # سطح نزدیک‌ترین زون‌های مخالف برای «جای تا زون مخالف» — یک بار در هر کندل
-        levels = room_levels(t, o, live_zones) if min_room_r > 0 else None
+        levels = room_levels(t, o, live_k) if min_room_r > 0 else None
 
         candidates = []
-        for z in live_zones:
+        # زون لمس‌نشده یا «مصرف‌شده» در این حلقه هیچ اثری ندارد؛ از قبل کنار گذاشته می‌شود
+        for k in live_k[(_Z_TC[live_k] > 0) & ~_Z_USED[live_k]]:
+            z = h_z[k]
             if id(z) in used:
                 continue
             # لمسِ همین کندل را ربات لایو فقط بعد از بسته شدن کندل می‌فهمد؛ پس تصمیم درباره‌ی
@@ -1389,10 +1533,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         # بک‌تست خیلی خوش‌بینانه می‌شود.
         armed_cands = []
         if arm_untouched_zones and not (drg or hrg or dtr == 0 or htr == 0 or dtr != htr):
-            wz_arm = [wz for wz in w_z
-                      if wz.created_time + pd.Timedelta(days=7) <= t
-                      and (wz.superseded_time is None or t < wz.superseded_time)]
-            for z in live_zones:
+            _hits_arm = big_body_hits(t, o_prev, c_prev)
+            for k in live_k[(_Z_TC[live_k] == 0) & ~_Z_USED[live_k]]:
+                z = h_z[k]
                 if id(z) in used:
                     continue
                 if z.superseded_time is not None and t >= z.superseded_time:
@@ -1400,7 +1543,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 if z.touch_count != 0:
                     continue
                 opp_dir = "SELL" if z.direction == "BUY" else "BUY"
-                if any(body_overlaps_zone(o_prev, c_prev, wz) for wz in wz_arm if wz.direction == opp_dir):
+                if _hits_arm[opp_dir]:
                     continue
                 if z.high() - z.low() <= 0:
                     continue
@@ -1452,15 +1595,12 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
         # ---------- weekly cancel BEFORE fill (همان) ----------
         # زون هفتگی فقط بعد از بسته‌شدن کندل هفتگیِ تأیید (حدود ۷ روز بعد) معتبر است
-        wz_now=[wz for wz in w_z
-                if wz.created_time + pd.Timedelta(days=7) <= t
-                and (wz.superseded_time is None or t < wz.superseded_time)]
+        _hits_now = big_body_hits(t, o_prev, c_prev) if any(p["active"] and not p["filled"] for p in pending) else None
         for p in pending:
             if not p["active"] or p["filled"]:
                 continue
             opp_dir = "SELL" if p["z"].direction=="BUY" else "BUY"
-            opp=[wz for wz in wz_now if wz.direction==opp_dir]
-            if any(body_overlaps_zone(o_prev,c_prev,wz) for wz in opp):
+            if _hits_now[opp_dir]:
                 p["active"]=False
                 p["cancel"]="لغو: برخورد بدنه با زون مخالف هفتگی"
                 reasons["لغو_به_خاطر_هفتگی"] += 1
@@ -1703,7 +1843,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
             # فیلترهای آزمایش طراحی برای لحظه‌ی «همین الان» (اگر روشن باشند)
             atr_last = float(h4["atr"].iloc[-1]) if "atr" in h4.columns else float("nan")
-            zones_now_last = [z for z in h_z if z.created_time < t_last and not z.expired]
+            zones_now_last = [k for k, z in enumerate(h_z) if z.created_time < t_last and not z.expired]
             levels_last = room_levels(t_last, c_last, zones_now_last) if min_room_r > 0 else None
 
             if not NO_SAME_BAR_TOUCH_FILL:
@@ -1718,7 +1858,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 # بک‌تستر همین‌ها را کندل بعد (بعد از سفارش‌های موجود و قبل از زون‌های لمس‌نشده)
                 # سفارش می‌دهد؛ ربات لایو هم همین الان همین کار را می‌کند.
                 wz_c = [wz for wz in w_z
-                        if wz.created_time + pd.Timedelta(days=7) <= t_last
+                        if wz.created_time + big_span <= t_last
                         and (wz.superseded_time is None or t_last < wz.superseded_time)]
                 cands_next = []
                 for z in h_z:
@@ -1767,7 +1907,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
             if filters_ok:
                 wz_now = [wz for wz in w_z
-                          if wz.created_time + pd.Timedelta(days=7) <= t_last
+                          if wz.created_time + big_span <= t_last
                           and (wz.superseded_time is None or t_last < wz.superseded_time)]
                 armed = []
                 for z in h_z:
@@ -2654,6 +2794,9 @@ def main():
     max_data_time = None
 
     # --- همه‌ی دیتاها یک‌جا خوانده می‌شود (در حالت «عین لایو» همه با هم لازم‌اند) ---
+    _tz, _tt, _tb = TF_SETS[STRATEGY_TF]
+    print(f"🕒 تایم‌فریم‌های استراتژی (STRATEGY_TF = \"{STRATEGY_TF}\"): "
+          f"زون و ورود -{_tz} | روند/رنج -{_tt} | زون بزرگ -{_tb}")
     print("🔧 تنظیمات واقع‌بینی بک‌تست:")
     print(f"   کندل ورود بدون تایم پایین‌تر: {ENTRY_BAR_MODE}"
           f"{'  ⚠️ (خوش‌بینانه — فقط برای مقایسه)' if ENTRY_BAR_MODE == 'optimistic' else ''}")
@@ -2677,7 +2820,8 @@ def main():
 
     if USE_M15:
         if no_ltf and len(no_ltf) == len(frames):
-            print(f"   دیتای تایم پایین‌تر (M1/M5/M15) داخل ZIPها نیست → کندل ورود با حالت «{ENTRY_BAR_MODE}» حساب می‌شود.")
+            _finer = "M1/M5" if STRATEGY_TF == "M15" else "M1/M5/M15"
+            print(f"   دیتای تایم پایین‌تر ({_finer}) داخل ZIPها نیست → کندل ورود با حالت «{ENTRY_BAR_MODE}» حساب می‌شود.")
         elif no_ltf:
             print(f"   ⚠️ این نمادها دیتای تایم پایین‌تر ندارند و با حالت «{ENTRY_BAR_MODE}» حساب می‌شوند: {', '.join(no_ltf)}")
         else:

@@ -20,8 +20,10 @@ import datetime as dt
 # =====================================================================================
 
 # ۱) از چند سال قبل تا امروز دیتا گرفته شود؟
-#    مثلاً 6 یعنی ۶ سال گذشته تا همین الان. (عدد اعشاری هم می‌شود: 0.5 یعنی ۶ ماه)
-YEARS_BACK = 6
+#    مثلاً 3 یعنی ۳ سال گذشته تا همین الان. (عدد اعشاری هم می‌شود: 0.5 یعنی ۶ ماه)
+#    ⚠️ تایم‌های ریز حجیم‌اند: هر سال ≈ ۲۵ هزار کندل ۱۵دقیقه، ۷۵ هزار کندل ۵دقیقه، ۳۷۰ هزار کندل ۱دقیقه.
+#       اگر از «Max bars in chart» متاتریدر بیشتر شود، دیتای قدیمی‌تر نمی‌آید (پایین را ببین).
+YEARS_BACK = 3
 
 # ۲) یا به‌جای «چند سال قبل»، تاریخ دقیق بده (اختیاری).
 #    فرمت: "2020-01-01"  — اگر START_DATE پر شود، YEARS_BACK نادیده گرفته می‌شود.
@@ -37,18 +39,19 @@ END_DATE = ""
 #       "M1" → "1"    "M5" → "5"    "M15" → "15"   "M30" → "30"
 #       "H1" → "60"   "H4" → "240"  "D1"  → "1D"   "W1"  → "1W"
 #
-#    ⚠️ سه تای اول (240 و 1D و 1W) را حذف نکن؛ بک‌تستر بدون آن‌ها اجرا نمی‌شود.
-#    ℹ️ بک‌تستر ریزترین فایلِ موجود از بین "1"، "5" و "15" را خودش پیدا می‌کند و ترتیب واقعی
-#       اتفاقات داخل کندل ۴ساعته را از روی آن حساب می‌کند (بک‌تست دقیق‌تر می‌شود).
-#    ⚠️ دیتای ۱ دقیقه خیلی حجیم است (حدود ۳۷۰ هزار کندل در سال برای هر نماد).
+#    بک‌تستر (run_backtest.py) بسته به تنظیم STRATEGY_TF یکی از این دو دسته را لازم دارد:
+#       STRATEGY_TF = "M15" → برچسب‌های  15 و 60 و 240   (زون ۱۵دقیقه، روند ۱ساعته، زون بزرگ ۴ساعته)
+#       STRATEGY_TF = "H4"  → برچسب‌های  240 و 1D و 1W   (همان ربات لایو فعلی)
+#    ℹ️ اگر یک تایم ریزتر از تایم زون هم بگیری (مثلاً "5" یا "1" برای دسته‌ی M15)، بک‌تستر خودش
+#       پیدایش می‌کند و ترتیب واقعی اتفاقات داخل کندل را از روی آن حساب می‌کند (دقیق‌تر).
 TIMEFRAMES = [
     ("240", "H4"),
-    ("1D",  "D1"),
-    ("1W",  "W1"),
     ("60",  "H1"),
     ("15",  "M15"),
-    ("5",   "M5"),
-    # ("1", "M1"),
+    # ("1D",  "D1"),
+    # ("1W",  "W1"),
+    # ("5",   "M5"),
+    # ("1",   "M1"),
 ]
 
 # ۴) نمادها — همان سبد ربات. اگر نزد بروکر پسوند دارند (مثلاً XAUUSD.m)، خودش پیدا می‌کند.
@@ -75,7 +78,8 @@ TF_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600,
               "H4": 14400, "D1": 86400, "W1": 604800}
 BARS_PER_YEAR = {"M1": 374400, "M5": 74880, "M15": 24960, "M30": 12480, "H1": 6240,
                  "H4": 1560, "D1": 260, "W1": 52}
-REQUIRED_LABELS = ("240", "1D", "1W")
+# دسته‌های تایم‌فریمی که بک‌تستر می‌شناسد (باید با TF_SETS در run_backtest.py یکی باشد)
+BACKTEST_SETS = {"M15": ("15", "60", "240"), "H4": ("240", "1D", "1W")}
 
 def _fail(msg):
     """پیام خطا + (اگر مستقیم دابل‌کلیک شده) صبر تا کاربر پیام را بخواند."""
@@ -115,9 +119,11 @@ def date_range():
 def check_settings():
     problems = []
     labels = [lab for lab, _ in TIMEFRAMES]
-    for need in REQUIRED_LABELS:
-        if need not in labels:
-            problems.append(f"تایم‌فریم با برچسب «{need}» در TIMEFRAMES نیست؛ بک‌تستر بدون آن اجرا نمی‌شود.")
+    if not labels:
+        problems.append("TIMEFRAMES خالی است؛ حداقل یک تایم‌فریم لازم است.")
+    elif not any(all(l in labels for l in need) for need in BACKTEST_SETS.values()):
+        problems.append("با این تایم‌فریم‌ها بک‌تستر اجرا نمی‌شود. یکی از این دو دسته لازم است: "
+                        + " یا ".join(f"«{' و '.join(v)}» (STRATEGY_TF={k})" for k, v in BACKTEST_SETS.items()))
     for lab, name in TIMEFRAMES:
         if name not in TF_SECONDS:
             problems.append(f"تایم‌فریم «{name}» شناخته‌شده نیست. مجازها: {', '.join(TF_SECONDS)}")
@@ -162,25 +168,41 @@ def resolve(base):
     return None
 
 
-def fetch(name, tf_name, start, end):
-    """کندل‌های بازه را می‌گیرد. اگر متاتریدر هنوز تاریخچه را از سرور نگرفته باشد،
+def _fetch_range(name, tf, start, end):
+    """یک تکه از بازه. اگر متاتریدر هنوز تاریخچه را از سرور نگرفته باشد،
     چند بار صبر می‌کند و دوباره می‌پرسد."""
-    tf = getattr(mt5, "TIMEFRAME_" + tf_name)
     rates = None
     best = 0
-    for attempt in range(6):
+    for attempt in range(4):
         rates = mt5.copy_rates_range(name, tf, start, end)
         n = 0 if rates is None else len(rates)
-        # تاریخچه کامل رسیده؟ (شروع دیتا نزدیک شروع درخواست، یا تعدادش دیگر زیاد نمی‌شود)
-        if n and (int(rates["time"][0]) <= start.timestamp() + 14 * 86400 or n == best):
+        # تاریخچه‌ی این تکه رسیده؟ (شروعش نزدیک شروع درخواست، یا تعدادش دیگر زیاد نمی‌شود)
+        if n and (int(rates["time"][0]) <= start.timestamp() + 7 * 86400 or n == best):
             break
         best = max(best, n)
-        time.sleep(3)
-    if rates is None or len(rates) == 0:
+        time.sleep(2)
+    return rates
+
+
+def fetch(name, tf_name, start, end):
+    """کندل‌های کل بازه — تکه‌تکه (هر تکه حداکثر حدود ۴۰ هزار کندل)، چون متاتریدر درخواستِ
+    خیلی بزرگ را گاهی کامل رد می‌کند و هیچ دیتایی نمی‌دهد."""
+    tf = getattr(mt5, "TIMEFRAME_" + tf_name)
+    per_day = BARS_PER_YEAR[tf_name] / 365.25
+    step = dt.timedelta(days=max(7, int(40000 / per_day)))
+    parts = []
+    a = start
+    while a < end:
+        b = min(a + step, end)
+        r = _fetch_range(name, tf, a, b)
+        if r is not None and len(r):
+            parts.append(pd.DataFrame(r))
+        a = b
+    if not parts:
         return None
-    df = pd.DataFrame(rates)
+    df = pd.concat(parts, ignore_index=True).drop_duplicates("time").sort_values("time")
     df["time"] = pd.to_datetime(df["time"], unit="s")          # ساعت سرور بروکر (مثل خود متاتریدر)
-    return df[["time", "open", "high", "low", "close"]]
+    return df[["time", "open", "high", "low", "close"]].reset_index(drop=True)
 
 
 def drop_open_bar(df, tf_name, last_tick_time):
@@ -264,11 +286,12 @@ def main():
                 notes.append(f"{tf_name} از {first.date()}")
             print(f"   {base:7s} {tf_name:4s} → {len(df):>9,} کندل | {first:%Y-%m-%d} تا {last:%Y-%m-%d %H:%M}{flag}")
 
-        missing = [lab for lab in REQUIRED_LABELS if f"{base}-{lab}.csv" not in files]
-        if missing:
-            print(f"❌ {base}: فایل‌های لازم ساخته نشد ({', '.join(missing)}) — ZIP ساخته نشد.\n")
+        if not files:
+            print(f"❌ {base}: هیچ دیتایی نیامد — ZIP ساخته نشد.\n")
             summary.append((base, "ناقص", "، ".join(notes)))
             continue
+        if not any(all(f"{base}-{l}.csv" in files for l in need) for need in BACKTEST_SETS.values()):
+            notes.append("برای بک‌تست کامل نیست")
 
         zpath = os.path.join(OUT_DIR, f"{base}.zip")
         tmp = zpath + ".tmp"
@@ -290,6 +313,10 @@ def main():
     if os.path.normcase(os.path.abspath(OUT_DIR)) != os.path.normcase(
             os.path.join(os.path.expanduser("~"), "Desktop", "0")):
         print("برای بک‌تست: فایل‌های ZIP این پوشه را در پوشه‌ی «0» روی دسکتاپ کپی کن (جای قبلی‌ها).")
+    labels = [lab for lab, _ in TIMEFRAMES]
+    fits = [k for k, need in BACKTEST_SETS.items() if all(l in labels for l in need)]
+    if fits:
+        print(f"در run_backtest.py مقدار STRATEGY_TF باید «{fits[0]}» باشد (همان بالای فایل).")
     return 0
 
 
