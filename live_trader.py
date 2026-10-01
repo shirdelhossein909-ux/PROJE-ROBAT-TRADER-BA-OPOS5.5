@@ -252,6 +252,130 @@ def heartbeat(status="سالم"):
         pass
 
 
+# ---------------- ثبت دلیل بسته شدن ربات ----------------
+# اگر ربات بسته شود (کرش، بسته شدن پنجره، Sign out، ری‌استارت ویندوز)، دلیلش اینجا ثبت می‌شود تا
+# نگهبان (watchdog.py) و اجرای بعدی ربات آن را در لاگ و بله گزارش کنند. اگر ربات فرصت نوشتن
+# نداشت (مثلاً ری‌استارت ناگهانی VPS)، نگهبان دلیل را از رویدادهای ویندوز پیدا می‌کند.
+import atexit
+import traceback
+import faulthandler
+
+EXIT_FILE = os.path.join(LOG_DIR, "last_exit.json")
+_exit_state = {"owner": False, "noted": False}
+
+
+def note_start():
+    _exit_state["owner"] = True
+    try:
+        with open(EXIT_FILE, "w", encoding="utf-8") as f:
+            json.dump({"running": True, "pid": os.getpid(),
+                       "started": dt.datetime.now().isoformat(timespec="seconds")}, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def note_exit(reason, detail=""):
+    """دلیل بسته شدن را در فایل می‌نویسد (فقط ربات اصلی، نه نسخه‌ی دومی که بالا نیامد)."""
+    if not _exit_state["owner"]:
+        return
+    _exit_state["noted"] = True
+    try:
+        with open(EXIT_FILE, "w", encoding="utf-8") as f:
+            json.dump({"running": False, "pid": os.getpid(), "reason": reason, "detail": str(detail)[-3000:],
+                       "time": dt.datetime.now().isoformat(timespec="seconds")}, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _bale_now(text, timeout=2.5):
+    """ارسال فوری به بله (بدون صف) — برای لحظه‌ای که پنجره در حال بسته شدن است و وقت کم است."""
+    chat = _bale_chat_id or BALE_CHAT_ID
+    if not chat:
+        try:
+            with open(os.path.join(LOG_DIR, "bale_chat_id.txt"), encoding="utf-8") as f:
+                chat = f.read().strip()
+        except Exception:
+            chat = ""
+    if not BALE_TOKEN or not chat:
+        return
+    try:
+        data = json.dumps({"chat_id": chat, "text": text}).encode("utf-8")
+        req = urllib.request.Request(f"https://tapi.bale.ai/bot{BALE_TOKEN}/sendMessage",
+                                     data=data, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=timeout)
+    except Exception:
+        pass
+
+
+def _log_file_only(msg):
+    try:
+        fname = os.path.join(LOG_DIR, "گزارش_" + dt.datetime.now().strftime("%Y%m%d") + ".txt")
+        with open(fname, "a", encoding="utf-8") as f:
+            f.write(f"[{dt.datetime.now():%Y-%m-%d %H:%M:%S}] {msg}\n")
+    except Exception:
+        pass
+
+
+def _excepthook(tp, val, tb):
+    """خطایی که ربات را می‌اندازد، قبل از بسته شدن در لاگ و بله ثبت می‌شود."""
+    if issubclass(tp, KeyboardInterrupt):
+        note_exit("توقف دستی (Ctrl+C)")
+        try:
+            _mark_stopped()
+        except Exception:
+            pass
+    else:
+        txt = "".join(traceback.format_exception(tp, val, tb))
+        note_exit("ربات به‌خاطر یک خطای پیش‌بینی‌نشده بسته شد (کرش پایتون)", txt)
+        _log_file_only("💥 ربات به‌خاطر خطا بسته شد:\n" + txt)
+        _bale_now("💥 ربات به‌خاطر یک خطا بسته شد و start_robot.bat تا ۱۰ ثانیه دیگر دوباره روشنش می‌کند.\n"
+                  + txt[-1500:])
+    sys.__excepthook__(tp, val, tb)
+
+
+def _on_exit():
+    if _exit_state["owner"] and not _exit_state["noted"]:
+        note_exit("ربات بسته شد (خروج بدون خطا)")
+
+
+# کرش‌های خیلی شدید (مثلاً داخل خود کتابخانه‌ی متاتریدر) که پایتون فرصت گزارش ندارد:
+# ردشان در logs/crash_dump.txt می‌ماند و نگهبان آن را گزارش می‌کند
+try:
+    os.makedirs(LOG_DIR, exist_ok=True)
+    _crash_file = open(os.path.join(LOG_DIR, "crash_dump.txt"), "a", encoding="utf-8")
+    faulthandler.enable(file=_crash_file, all_threads=True)
+except Exception:
+    _crash_file = None
+
+_console_handler = []
+
+
+def _install_console_handler():
+    """ویندوز قبل از بستن پنجره‌ی CMD (دکمه‌ی X)، Sign out یا خاموش شدن، چند ثانیه به برنامه
+    وقت می‌دهد؛ در همین چند ثانیه دلیل در فایل و بله ثبت می‌شود."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        names = {2: "پنجره‌ی CMD ربات بسته شد (دکمه‌ی X یا بسته شدن پنجره)",
+                 5: "کاربر از ویندوز خارج شد (Sign out / Log off) — این کار همه‌ی برنامه‌ها را می‌بندد",
+                 6: "ویندوز در حال خاموش/ری‌استارت شدن است"}
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
+        def handler(ev):
+            if ev in names:
+                note_exit(names[ev])
+                _log_file_only(f"🛑 {names[ev]} — ربات بسته می‌شود؛ نگهبان دوباره روشنش می‌کند.")
+                _bale_now(f"🛑 {names[ev]}. ربات بسته شد؛ نگهبان تا چند دقیقه‌ی دیگر دوباره روشنش می‌کند.")
+            return False      # ادامه‌ی رفتار عادی ویندوز (Ctrl+C هم به پایتون می‌رسد)
+
+        _console_handler.append(handler)
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(handler, True)
+    except Exception:
+        pass
+
+
 # ---------------- اتصال ضدضربه ----------------
 def connect_with_retry(bale_notify=True):
     """آن‌قدر تلاش می‌کند تا وصل شود؛ هر مشکل را با زبان ساده گزارش می‌دهد."""
@@ -1433,6 +1557,30 @@ def _write_pid():
         pass
 
 
+def report_previous_exit():
+    """اگر اجرای قبلی ربات بی‌خبر بسته شده (بدون ثبت دلیل) و نگهبان هم هنوز گزارشش نکرده،
+    دلیل احتمالی از رویدادهای ویندوز پیدا و در لاگ و بله گزارش می‌شود."""
+    try:
+        with open(EXIT_FILE, encoding="utf-8") as f:
+            ex = json.load(f)
+    except Exception:
+        return
+    if not ex.get("running"):
+        return                       # دلیل قبلاً ثبت و گزارش شده (کرش، بستن پنجره، توقف دستی...)
+    try:
+        import watchdog as _wd
+        since = _wd.last_heartbeat_ts() or (_time.time() - 3600)
+        if _wd.already_reported(since):
+            return
+        reasons = _wd.diagnose(since)
+        _wd.mark_reported(since)
+    except Exception as e:
+        reasons = [f"(بررسی دلیل ممکن نشد: {e})"]
+        since = None
+    when = f" (آخرین علامت حیات: {dt.datetime.fromtimestamp(since):%Y-%m-%d %H:%M})" if since else ""
+    log("🔎 اجرای قبلی ربات بی‌خبر بسته شده بود" + when + ". دلیل احتمالی:\n- " + "\n- ".join(reasons))
+
+
 def _mark_stopped():
     try:
         with open(STOP_FLAG, "w", encoding="utf-8") as f:
@@ -1447,6 +1595,17 @@ def main():
         print("⛔ یک ربات دیگر همین الان در حال اجراست — این یکی بالا نمی‌آید (دو ربات روی یک حساب = سفارش تکراری).")
         return EXIT_NO_RESTART
     _write_pid()
+    report_previous_exit()
+    note_start()
+    sys.excepthook = _excepthook
+    atexit.register(_on_exit)
+    _install_console_handler()
+    if _crash_file is not None:
+        try:
+            _crash_file.write(f"\n=== شروع ربات {dt.datetime.now():%Y-%m-%d %H:%M:%S} | پروسه {os.getpid()} ===\n")
+            _crash_file.flush()
+        except Exception:
+            pass
     log("========== شروع ربات (نسخه ۳ — دمو) ==========", bale=False)
     log(f"سبد انتخابی ({len(BASKET)} نماد): {', '.join(BASKET)} — ربات فقط روی همین‌ها کار می‌کند.", bale=False)
 
@@ -1599,6 +1758,7 @@ def main():
 
         except KeyboardInterrupt:
             _mark_stopped()
+            note_exit("توقف دستی (Ctrl+C)")
             log("⏹️ توقف دستی (Ctrl+C). سفارش‌ها و پوزیشن‌ها داخل متاتریدر دست‌نخورده می‌مانند "
                 "(استاپ و تارگت روی خود سفارش‌هاست و سرور بروکر اجرایشان می‌کند). نگهبان هم ربات را "
                 "دوباره روشن نمی‌کند تا خودت دوباره اجرایش کنی.")

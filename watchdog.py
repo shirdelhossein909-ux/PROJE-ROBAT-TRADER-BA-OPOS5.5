@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """نگهبان ربات — اگر ربات از کار افتاد یا گیر کرد، دوباره راه‌اندازی‌اش می‌کند و در بله خبر می‌دهد.
 
-اجرا:  start_watchdog.bat   (یک بار هم install_autostart.bat را اجرا کن تا بعد از هر ری‌استارت
-       ویندوز/VPS، نگهبان خودش بالا بیاید و ربات را هم بالا بیاورد)
+اجرا:  install_autostart.bat را یک بار با «Run as administrator» اجرا کن. از آن به بعد نگهبان
+       بدون پنجره اجرا می‌شود: با هر ورود به ویندوز، و هر ۵ دقیقه یک بار اگر بسته شده باشد.
+       (start_watchdog.bat فقط برای اجرای دستی با پنجره است.)
 
 چه می‌کند (هر ۱ دقیقه):
   - ربات هر ۳۰ ثانیه فایل logs/heartbeat.txt را به‌روز می‌کند. اگر این فایل کهنه شد:
@@ -10,6 +11,9 @@
       · پروسه‌ی ربات مرده (۳ دقیقه بی‌ضربان) → start_robot.bat در پنجره‌ی جدید اجرا می‌شود
   - اگر بازار باز است و بیش از ۴ ساعت و ربع همگام‌سازی انجام نشده → هشدار در بله
   - اگر ربات عمداً خاموش شده (Ctrl+C یا stop_robot.bat) → دست نمی‌زند
+  - هر بار ربات از کار بیفتد، دلیلش را پیدا و در بله گزارش می‌کند: دلیلی که خود ربات قبل از
+    بسته شدن نوشته (کرش، بستن پنجره، Sign out)، ری‌استارت ویندوز، و رویدادهای ثبت‌شده‌ی ویندوز
+    (آپدیت، خاموشی ناگهانی، Sign out، کرش برنامه)
 نگهبان قبلی با خطای «WinError 87» نمی‌توانست ربات را بالا بیاورد؛ این نسخه با os.startfile
 (همان دابل‌کلیک) اجرا می‌کند.
 """
@@ -39,7 +43,11 @@ PID_FILE = os.path.join(LOGS, "robot.pid")
 STOP_FLAG = os.path.join(LOGS, "robot_stopped.flag")
 LAST_SYNC = os.path.join(LOGS, "last_sync.txt")
 LOG_FILE = os.path.join(LOGS, "نگهبان.txt")
+EXIT_FILE = os.path.join(LOGS, "last_exit.json")
+CRASH_FILE = os.path.join(LOGS, "crash_dump.txt")
+REPORTED_FILE = os.path.join(LOGS, "last_down_report.txt")
 EXIT_NO_RESTART = 3
+TASK_NAME = "ZoneRobot_Watchdog"
 
 
 def log(msg, bale=False):
@@ -183,6 +191,193 @@ def single_instance():
     return True
 
 
+# ---------------- پیدا کردن دلیل از کار افتادن ربات ----------------
+EVENT_NAMES = {
+    "1074": "ری‌استارت/خاموش کردن ویندوز توسط یک برنامه یا کاربر (اغلب آپدیت ویندوز)",
+    "6006": "ویندوز به‌طور عادی خاموش شد",
+    "6008": "ویندوز ناگهانی خاموش شده بود (قطع برق، هنگ یا ری‌ست سخت VPS)",
+    "41": "سیستم بدون خاموش شدن درست دوباره روشن شد",
+    "1001": "صفحه‌ی آبی ویندوز (BugCheck)",
+    "7002": "کاربر از ویندوز خارج شد (Sign out) — همه‌ی برنامه‌ها از جمله ربات بسته می‌شوند",
+    "4647": "کاربر Sign out کرد — همه‌ی برنامه‌ها از جمله ربات بسته می‌شوند",
+    "1000": "برنامه کرش کرد (Application Error)",
+    "1002": "برنامه هنگ کرد و ویندوز آن را بست (Application Hang)",
+}
+
+
+def _read_json(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def last_heartbeat_ts():
+    try:
+        return os.path.getmtime(HEARTBEAT)
+    except Exception:
+        return None
+
+
+def already_reported(since_ts):
+    return bool(since_ts) and _read(REPORTED_FILE) == str(int(since_ts))
+
+
+def mark_reported(since_ts):
+    try:
+        with open(REPORTED_FILE, "w", encoding="utf-8") as f:
+            f.write(str(int(since_ts or 0)))
+    except Exception:
+        pass
+
+
+def boot_time():
+    """زمان روشن شدن ویندوز (برای فهمیدن ری‌استارت VPS)"""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        k32.GetTickCount64.restype = ctypes.c_ulonglong
+        return time.time() - k32.GetTickCount64() / 1000.0
+    except Exception:
+        return None
+
+
+def _events(log_name, ids, since_ts, max_n=6):
+    """رویدادهای ثبت‌شده‌ی ویندوز از کمی قبل از since_ts تا الان (با wevtutil خود ویندوز)."""
+    if os.name != "nt":
+        return []
+    ms = int(max(120, time.time() - since_ts + 300) * 1000)
+    q = ("*[System[(" + " or ".join(f"EventID={i}" for i in ids) +
+         f") and TimeCreated[timediff(@SystemTime) <= {ms}]]]")
+    try:
+        r = subprocess.run(["wevtutil", "qe", log_name, f"/q:{q}", "/f:text", "/rd:true", f"/c:{max_n}"],
+                           capture_output=True, timeout=30, creationflags=0x08000000)   # بدون پنجره
+    except Exception:
+        return []
+    raw = r.stdout or b""
+    try:
+        txt = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        txt = raw.decode("mbcs", "replace")
+    out, cur, in_desc = [], None, False
+    for line in txt.splitlines():
+        t = line.strip()
+        if t.startswith("Event["):
+            if cur:
+                out.append(cur)
+            cur, in_desc = {"date": "", "id": "", "desc": ""}, False
+        elif cur is None:
+            continue
+        elif t.startswith("Date:"):
+            cur["date"] = t[5:].strip()[:19].replace("T", " ")
+        elif t.startswith("Event ID:"):
+            cur["id"] = t[9:].strip()
+        elif t.startswith("Description:"):
+            in_desc, cur["desc"] = True, t[12:].strip()
+        elif in_desc and t:
+            cur["desc"] = (cur["desc"] + " " + t).strip()
+    if cur:
+        out.append(cur)
+    return out
+
+
+def diagnose(since_ts):
+    """فهرست دلیل‌های احتمالی از کار افتادن ربات بعد از لحظه‌ی since_ts (آخرین ضربان)."""
+    found = []
+    ex = _read_json(EXIT_FILE)
+    if ex and not ex.get("running") and ex.get("reason"):
+        d = (ex.get("detail") or "").strip()
+        found.append(f"خود ربات قبل از بسته شدن نوشت: {ex['reason']}" + (f" | {d[-300:]}" if d else ""))
+    bt = boot_time()
+    if bt and since_ts and bt > since_ts - 120:
+        found.append(f"ویندوز (VPS) ساعت {dt.datetime.fromtimestamp(bt):%Y-%m-%d %H:%M} دوباره روشن شده — "
+                     f"یعنی ری‌استارت شده و همه‌ی برنامه‌ها بسته شده‌اند.")
+    for log_name, ids, keys in (("System", (1074, 6006, 6008, 41, 1001, 7002), None),
+                                ("Security", (4647,), None),
+                                ("Application", (1000, 1002), ("python", "terminal64", "metatrader", "cmd.exe", "conhost"))):
+        for e in _events(log_name, ids, since_ts):
+            if keys and not any(k in e["desc"].lower() for k in keys):
+                continue
+            found.append(f"رویداد ویندوز {e['id']} در {e['date']}: {EVENT_NAMES.get(e['id'], '')} | {e['desc'][:220]}")
+    try:
+        if since_ts and os.path.getmtime(CRASH_FILE) > since_ts - 60:
+            tail = _read(CRASH_FILE)[-1500:]
+            if "Fatal Python error" in tail or "fatal exception" in tail.lower():
+                found.append("کرش شدید داخل پایتون یا کتابخانه‌ی متاتریدر (crash_dump.txt): " + tail[-400:])
+    except Exception:
+        pass
+    if not found:
+        found.append("ردی در ویندوز پیدا نشد → به احتمال زیاد پنجره‌ی ربات بسته شده (دکمه‌ی X، End task در "
+                     "Task Manager، یا بسته شدن پنجره‌ها هنگام خروج از ریموت) یا پروسه از بیرون بسته شده.")
+    return found
+
+
+# ---------------- ثبت در Task Scheduler ویندوز ----------------
+def install_task():
+    """نگهبان را در Task Scheduler ثبت می‌کند: با ورود به ویندوز + هر ۵ دقیقه یک بار (اگر بسته شده
+    باشد دوباره اجرا می‌شود)، بدون پنجره (pythonw) تا اشتباهی بسته نشود، و بدون سقف زمان اجرا."""
+    from xml.sax.saxutils import escape
+    pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    if not os.path.exists(pyw):
+        pyw = sys.executable
+    user = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ.get('USERNAME', '')}".strip("\\")
+    xml = f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Zone robot watchdog - restarts the trading robot</Description></RegistrationInfo>
+  <Triggers>
+    <LogonTrigger><Enabled>true</Enabled><UserId>{escape(user)}</UserId></LogonTrigger>
+    <TimeTrigger>
+      <Repetition><Interval>PT5M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition>
+      <StartBoundary>2026-01-01T00:00:00</StartBoundary><Enabled>true</Enabled>
+    </TimeTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author"><UserId>{escape(user)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>999</Count></RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec><Command>{escape(pyw)}</Command><Arguments>"{escape(os.path.abspath(__file__))}"</Arguments><WorkingDirectory>{escape(HERE)}</WorkingDirectory></Exec>
+  </Actions>
+</Task>
+"""
+    xml_path = os.path.join(LOGS, "watchdog_task.xml")
+    os.makedirs(LOGS, exist_ok=True)
+    with open(xml_path, "w", encoding="utf-16") as f:
+        f.write(xml)
+    subprocess.run(["schtasks", "/Delete", "/TN", TASK_NAME, "/F"], capture_output=True)
+    r = subprocess.run(["schtasks", "/Create", "/TN", TASK_NAME, "/XML", xml_path, "/F"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        print("❌ ثبت در Task Scheduler انجام نشد:", (r.stdout or "") + (r.stderr or ""))
+        print("   روی install_autostart.bat راست‌کلیک کن و Run as administrator را بزن.")
+        return 1
+    subprocess.run(["schtasks", "/Run", "/TN", TASK_NAME], capture_output=True)
+    print("✅ نگهبان ثبت شد و همین الان (بدون پنجره) اجرا شد.")
+    print("   - با هر ورود به ویندوز و هر ۵ دقیقه یک بار چک می‌شود؛ اگر بسته شده باشد دوباره اجرا می‌شود.")
+    print("   - گزارش‌هایش در بله و در فایل logs\\نگهبان.txt است.")
+    print(f"   - برای حذف:  schtasks /Delete /TN {TASK_NAME} /F")
+    return 0
+
+
 # ---------------- حلقه‌ی اصلی ----------------
 def main():
     if not single_instance():
@@ -232,8 +427,18 @@ def main():
             age_txt = "نامعلوم" if age is None else f"{age:.0f} دقیقه"
             if down_since is None:
                 down_since = now
-                log(f"⚠️ ربات پاسخ نمی‌دهد — {age_txt} است ضربانی نزده | پروسه در حال اجرا؟ {alive}", bale=True)
                 last_remind = now
+                since = last_heartbeat_ts() or (now - 3600)
+                if alive:
+                    why = ["پروسه‌ی ربات زنده است ولی جواب نمی‌دهد (گیر کرده) — بسته و دوباره اجرا می‌شود."]
+                else:
+                    why = diagnose(since)
+                if not already_reported(since):
+                    mark_reported(since)
+                    log(f"⚠️ ربات از کار افتاده — {age_txt} است ضربانی نزده (پروسه زنده؟ {alive}). "
+                        f"دارم دوباره روشنش می‌کنم.\nدلیل احتمالی:\n- " + "\n- ".join(why), bale=True)
+                else:
+                    log(f"⚠️ ربات هنوز خاموش است ({age_txt} بی‌ضربان) — دلیلش قبلاً گزارش شده؛ دوباره روشنش می‌کنم.")
             elif now - last_remind > REMIND_MINUTES * 60:
                 last_remind = now
                 log(f"⚠️ ربات هنوز برنگشته ({age_txt} بی‌ضربان) — دارم تلاش می‌کنم.", bale=True)
@@ -268,4 +473,12 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--install" in sys.argv:
+        code = install_task()
+        if os.environ.get("WATCHDOG_FROM_BAT") != "1":
+            try:
+                input("\nبرای بستن Enter بزن...")
+            except Exception:
+                pass
+        sys.exit(code)
     sys.exit(main() or 0)
