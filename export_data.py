@@ -28,8 +28,12 @@ YEARS_BACK = 3
 # ۲) یا به‌جای «چند سال قبل»، تاریخ دقیق بده (اختیاری).
 #    فرمت: "2020-01-01"  — اگر START_DATE پر شود، YEARS_BACK نادیده گرفته می‌شود.
 #    END_DATE خالی یعنی «تا همین الان».
-START_DATE = ""
-END_DATE = ""
+START_DATE = "2025-01-01"
+END_DATE = "2025-12-31"
+#    گرم‌کردن: تایم‌های ۱۵دقیقه و بالاتر از این چند روز قبل از START_DATE گرفته می‌شوند تا روند ۴ساعته و
+#    زون‌ها روز اول بک‌تست آماده باشند (معامله فقط از START_DATE؛ همان WARMUP_DAYS در run_backtest.py).
+#    تایم‌های ۱ و ۵ دقیقه فقط از خود START_DATE.
+WARMUP_DAYS = 120
 
 # ۳) تایم‌فریم‌ها — هر ردیف: ("برچسب اسم فایل", "تایم‌فریم متاتریدر")
 #    برچسب در اسم فایل می‌آید؛ مثلاً ("240", "H4") فایل XAUUSD-240.csv را می‌سازد.
@@ -40,21 +44,21 @@ END_DATE = ""
 #       "H1" → "60"   "H4" → "240"  "D1"  → "1D"   "W1"  → "1W"
 #
 #    بک‌تستر (run_backtest.py) بسته به تنظیم STRATEGY_TF یکی از این دو دسته را لازم دارد:
-#       STRATEGY_TF = "M15" → برچسب‌های  15 و 240 و 1D   (بیس ۱۵دقیقه، روند ۴ساعته، فیبو/زون مخالف روزانه)
+#       STRATEGY_TF = "M15" → برچسب‌های  15 و 240        (بیس ۱۵دقیقه، روند و زون مخالف ۴ساعته)
 #       STRATEGY_TF = "H4"  → برچسب‌های  240 و 1D و 1W   (همان ربات لایو فعلی)
 #    ℹ️ اگر یک تایم ریزتر از تایم زون هم بگیری (مثلاً "5" یا "1" برای دسته‌ی M15)، بک‌تستر خودش
 #       پیدایش می‌کند و ترتیب واقعی اتفاقات داخل کندل را از روی آن حساب می‌کند (دقیق‌تر).
-#    دسته‌ی فعلی = STRATEGY_TF="M15" (روش خودت: بیس ۱۵دقیقه، روند ۴ساعته، فیبو و زون مخالف روزانه)
-#    ℹ️ ۵دقیقه (اختیاری) ترتیب واقعی حرکت قیمت داخل هر کندل ۱۵دقیقه را دقیق‌تر می‌کند، ولی ۳ سالش
-#       ≈ ۲۲۵ هزار کندل است و «Max bars in chart» متاتریدر باید Unlimited باشد.
+#    دسته‌ی فعلی = STRATEGY_TF="M15" (بیس ۱۵دقیقه، روند ۴ساعته، تأیید چاک ۱دقیقه)
+#    ℹ️ ۱دقیقه برای تأیید چاک لازم است؛ یک سالش ≈ ۳۷۰ هزار کندل → «Max bars in chart» متاتریدر
+#       باید Unlimited باشد.
 TIMEFRAMES = [
+    ("1",   "M1"),
     ("15",  "M15"),
     ("240", "H4"),
-    ("1D",  "D1"),
+    # ("1D",  "D1"),
     # ("5",   "M5"),
     # ("1W",  "W1"),
     # ("60",  "H1"),
-    # ("1",   "M1"),
 ]
 
 # ۴) نمادها — همان سبد ربات. اگر نزد بروکر پسوند دارند (مثلاً XAUUSD.m)، خودش پیدا می‌کند.
@@ -88,7 +92,8 @@ TF_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600,
 BARS_PER_YEAR = {"M1": 374400, "M5": 74880, "M15": 24960, "M30": 12480, "H1": 6240,
                  "H4": 1560, "D1": 260, "W1": 52}
 # دسته‌های تایم‌فریمی که بک‌تستر می‌شناسد (باید با TF_SETS در run_backtest.py یکی باشد)
-BACKTEST_SETS = {"M15": ("15", "240", "1D"), "H4": ("240", "1D", "1W")}
+BACKTEST_SETS = {"M15": ("15", "240"), "H4": ("240", "1D", "1W")}
+LTF_NAMES = ("M1", "M5")      # بدون گرم‌کردن (فقط از START_DATE)
 
 def _fail(msg):
     """پیام خطا + (اگر مستقیم دابل‌کلیک شده) صبر تا کاربر پیام را بخواند."""
@@ -376,6 +381,8 @@ def main():
     start, end = date_range()
     years = (min(end, dt.datetime.now(dt.timezone.utc)) - start).days / 365.25
     print(f"بازه: از {start.date()} تا {'امروز' if not END_DATE.strip() else END_DATE}  (حدود {years:.1f} سال)")
+    if WARMUP_DAYS:
+        print(f"   (تایم‌های ۱۵دقیقه و بالاتر از {WARMUP_DAYS} روز قبلش برای گرم‌کردن روند و زون‌ها)")
     print(f"تایم‌فریم‌ها: {', '.join(f'{n} (فایل -{lab}.csv)' for lab, n in TIMEFRAMES)}")
     print(f"نمادها: {', '.join(SYMBOLS)}")
     print(f"پوشه‌ی خروجی: {OUT_DIR}\n")
@@ -417,7 +424,8 @@ def main():
         files = {}
         notes = []
         for lab, tf_name in TIMEFRAMES:
-            df = fetch(name, tf_name, start, end)
+            tf_start = start if tf_name in LTF_NAMES else start - dt.timedelta(days=WARMUP_DAYS)
+            df = fetch(name, tf_name, tf_start, end)
             df = drop_open_bar(df, tf_name, last_tick)
             if df is None or df.empty:
                 notes.append(f"{tf_name}: دیتا نیامد")
@@ -425,7 +433,7 @@ def main():
                 continue
             files[f"{base}-{lab}.csv"] = to_csv_text(df, digits)
             first, last = df["time"].iloc[0], df["time"].iloc[-1]
-            short = first > pd.Timestamp(start.replace(tzinfo=None)) + pd.Timedelta(days=30)
+            short = first > pd.Timestamp(tf_start.replace(tzinfo=None)) + pd.Timedelta(days=30)
             flag = "  ⚠️ از شروع بازه کوتاه‌تر" if short else ""
             if short:
                 notes.append(f"{tf_name} از {first.date()}")

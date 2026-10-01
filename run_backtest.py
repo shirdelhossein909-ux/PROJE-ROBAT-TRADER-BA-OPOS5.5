@@ -18,8 +18,8 @@ import pandas as pd
 # (ربات لایو همیشه روی H4 کار می‌کند و این تنظیم رویش اثری ندارد.)
 STRATEGY_TF = "M15"
 TF_SETS = {
-    #        (فایل زون/بیس، فایل روند، فایل زون بزرگ و فیبو)
-    "M15": ("15", "240", "1D"),     # روش خودت: بیس ۱۵دقیقه، روند ۴ساعته، فیبو و زون مخالف روزانه
+    #        (فایل زون/بیس، فایل روند، فایل زون بزرگ و فیبو — None = ندارد)
+    "M15": ("15", "240", None),     # روش خودت: بیس ۱۵دقیقه، روند و زون مخالف ۴ساعته (روزانه حذف شد)
     "H4":  ("240", "1D", "1W"),     # نسخه‌ی قدیمی ربات لایو
 }
 
@@ -49,6 +49,13 @@ RANGE_FILTER = False        # فیلتر رنج قدیمی ربات (بر اسا
 LEGOUT_CLEAR_BARS = 3
 # لگ‌اوت قوی: بدنه‌ی کندل خروج از بیس ≥ این ضریب × ATR(14) همان تایم. ۰ = خاموش
 MIN_LEGOUT_BODY_ATR = 1.0
+# بیس‌های مخالفِ چسبیده به هم یک بیس حساب می‌شوند و چاک باید پشت دورترینشان با بادی بسته شود.
+# چسبیده = فاصله‌ی قیمتی‌شان حداکثر این ضریب × ATR و فاصله‌ی زمانی‌شان حداکثر این تعداد کندل
+# (یک کندل، دو کندل متوسط یا چند کندل ریز). همین قانون برای چاک ۱دقیقه هم هست.
+CHOCH_CLUSTER_GAP_ATR = 1.5
+CHOCH_CLUSTER_MAX_BARS = 5
+# بی‌اعتبار شدن بیس: کندل ۱۵دقیقه پشت دیستال بسته شود (سایه حساب نیست)
+ZONE_INVALIDATE_ON_CLOSE = True
 # تأیید چاک: لگ‌اوت بیس باید «بیس مخالف خودش» را با بادی چاک بدهد — یعنی کلوز کندل آن طرف
 # سقف/کفی که بیس مخالف ساخته (آخرین سقف پایین‌تر برای دیمند، آخرین کف بالاتر برای سوپلای)،
 # پیش از آنکه قیمت به بیس برگردد. بیس مخالف = آخرین بیس مخالفِ شکسته‌نشده پیش از این بیس که
@@ -63,6 +70,7 @@ HTF_ZONE_FILTER = True
 OPP_ZONE_ROOM_R = 3.0
 
 # فیبوی آخرین سوئینگ روزانه (۰ = کف، ۱ = سقف): بای فقط زیر ۰.۸ | سل فقط بالای ۰.۱۵
+# فقط وقتی تایم بزرگ (روزانه) در TF_SETS باشد؛ الان روزانه حذف شده، پس عملاً خاموش است.
 FIB_FILTER = True
 FIB_BUY_MAX = 0.80
 FIB_SELL_MIN = 0.15
@@ -120,8 +128,11 @@ USE_M15 = True
 # بازه‌ی بک‌تست: در صورت نیاز این دو خط را تغییر بده.
 # اگر این تاریخ از شروع دیتا قدیمی‌تر باشد، خودکار روی شروع واقعی دیتا تنظیم می‌شود،
 # پس گذاشتن یک تاریخ قدیمی یعنی «هرچه دیتا داری استفاده کن».
-BACKTEST_START = pd.Timestamp("2019-01-01")  # عملاً = شروع دیتای موجود
-BACKTEST_END = None  # نمونه: pd.Timestamp("2024-12-31")؛ None یعنی تا انتهای دیتا
+BACKTEST_START = pd.Timestamp("2025-01-01")  # معامله‌ها فقط سال ۲۰۲۵
+BACKTEST_END = pd.Timestamp("2025-12-31 23:59:59")  # None یعنی تا انتهای دیتا
+# گرم‌کردن: روند، زون‌ها و ATR از این چند روز قبل از BACKTEST_START ساخته می‌شوند تا روز اول
+# بک‌تست آماده باشند؛ در این مدت معامله‌ای نیست. (export_data همین مقدار دیتای اضافه می‌گیرد)
+WARMUP_DAYS = 120
 
 # هزینه‌های معاملاتی (نسبت به اسپرد هر نماد؛ در صورت نیاز این دو عدد را ویرایش کن)
 COMMISSION_SPREAD_MULT = 0.0       # کمیسیون: حساب دموی MetaQuotes کمیسیون ندارد (هیستوری = ۰). حساب واقعی ECN ≈ 0.5
@@ -244,12 +255,18 @@ LEAVE_ONE_OUT_TEST = False
 # ⚠️ زمان‌بر: هر ردیف یک اجرای کامل. ردیفی را که نمی‌خواهی با # غیرفعال کن.
 DESIGN_TESTS = True
 DESIGN_VARIANTS = {
-    # نام سربرگ: (تنظیمات، توضیح)
-    # اجرای اصلی (سربرگ «خلاصه») = TREND_MODE بالای فایل: روند فقط با چاک
-    "روند_با_چاک_و_ترندلاین": ({"trend_mode": "choch_tl"},
-                               "روند فقط وقتی عوض می‌شود که هم چاک بخورد هم ترندلاین با بدنه‌ی کندل بشکند؛ "
-                               "اگر فقط ترندلاین بشکند فاز فشردگی است و هر دو جهت مجاز"),
+    # نام اجرا: (تنظیمات، توضیح) — اجرای اصلی = ورود لیمیت ۱۵دقیقه بدون تأیید (روش فعلی)
+    "تأیید_۱دقیقه_ورود_بیس_۱۵دقیقه": ({"ltf_mode": "zone"},
+        "قیمت به بیس ۱۵دقیقه می‌رسد → منتظر چاک ۱دقیقه در جهت بیس → بعد اوردر روی همان بیس ۱۵دقیقه "
+        "(ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R)"),
+    "تأیید_۱دقیقه_ورود_بیس_۱دقیقه": ({"ltf_mode": "base"},
+        "قیمت به بیس ۱۵دقیقه می‌رسد → منتظر چاک ۱دقیقه در جهت بیس → بعد اوردر روی بیس ۱دقیقه‌ای که چاک "
+        "را ساخت (ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R)"),
 }
+# تأیید ۱دقیقه: سفارشِ بعد از تأیید اگر قیمت این‌قدر R دور شد و پر نشد، لغو می‌شود
+LTF_CANCEL_R = 5.0
+# ورود روی بیس ۱دقیقه: اگر استاپ از این ضریب × اسپرد کوچک‌تر باشد ورود نمی‌شود (استاپ داخل اسپرد)
+LTF_MIN_RISK_SPREAD = 2.0
 
 # سربرگ‌های اضافه‌ی خروجی (پایداری نماد، پرتفوی، تنظیمات و ...). False = فقط «خلاصه»
 # و سربرگ‌های آزمایش طراحی نوشته می‌شوند.
@@ -550,11 +567,13 @@ def load_timeframes_from_zip(zip_path: str, tf_set=None):
         def find(label):
             return [n for n in names if n.endswith(f"-{label}.csv")]
 
-        fz, ft, fb = find(lab_zone), find(lab_trend), find(lab_big)
+        fz, ft = find(lab_zone), find(lab_trend)
+        fb = find(lab_big) if lab_big else ["-"]
         if not fz or not ft or not fb:
             raise ValueError(
                 f"داخل ZIP فایل‌های لازم برای STRATEGY_TF=\"{key}\" پیدا نشد: {zip_path} | "
-                f"{lab_zone}={len(fz)} {lab_trend}={len(ft)} {lab_big}={len(fb)} — "
+                f"{lab_zone}={len(fz)} {lab_trend}={len(ft)}"
+                + (f" {lab_big}={len(fb)}" if lab_big else "") + " — "
                 f"یا دیتای همین تایم‌فریم‌ها را بگیر یا STRATEGY_TF را عوض کن."
             )
 
@@ -570,13 +589,13 @@ def load_timeframes_from_zip(zip_path: str, tf_set=None):
 
         h4 = read_mt_csv_from_bytes(z.read(fz[0]))
         d1 = read_mt_csv_from_bytes(z.read(ft[0]))
-        w1 = read_mt_csv_from_bytes(z.read(fb[0]))
+        w1 = read_mt_csv_from_bytes(z.read(fb[0])) if lab_big else None   # None = تایم بزرگ ندارد
         m15 = read_mt_csv_from_bytes(z.read(f15_list[0])) if f15_list else None
 
-    if h4.empty or d1.empty or w1.empty:
+    if h4.empty or d1.empty or (w1 is not None and w1.empty):
         raise ValueError(
             f"داده‌ی یکی از تایم‌فریم‌ها داخل ZIP خالی است: {zip_path} | "
-            f"زون={len(h4)} روند={len(d1)} بزرگ={len(w1)}"
+            f"زون={len(h4)} روند={len(d1)} بزرگ={0 if w1 is None else len(w1)}"
         )
 
     return h4, d1, w1, m15
@@ -861,7 +880,12 @@ class Zone:
     def low(self): return min(self.proximal, self.distal)
     def high(self): return max(self.proximal, self.distal)
 
-def build_zones(df, symbol, tf, max_base_len, atr_s, legout_clear=None):
+def build_zones(df, symbol, tf, max_base_len, atr_s, legout_clear=None, weak_out=None,
+                measure_departure=True):
+    """بیس‌ها (زون‌ها) با کنسالیدیشن اوی.
+    weak_out: اگر فهرست باشد، بیس‌هایی که کنسالیدیشن اوی ندادند هم (با oe=False) به آن اضافه می‌شوند —
+              فقط برای «بیس‌های چسبیده» در تأیید چاک؛ روی پیدا شدن بیس‌های اصلی اثری ندارد.
+    measure_departure: False = «حاشیه‌ی سود» حساب نشود (برای تایم ۱دقیقه؛ سریع‌تر)."""
     # ستون‌ها یک بار به آرایه‌ی numpy تبدیل می‌شوند. قوانین عوض نشده‌اند؛ فقط
     # به‌جای خواندن سطربه‌سطر از pandas (که در حلقه‌ی تودرتو بسیار کند است)
     # همان شرط‌ها روی آرایه محاسبه می‌شوند.
@@ -935,6 +959,11 @@ def build_zones(df, symbol, tf, max_base_len, atr_s, legout_clear=None):
                         born = k2
                         break
                 if born is None:
+                    if weak_out is not None:
+                        wz = Zone(symbol, tf, direction, proximal, distal, times[j], times[i], times[j-1],
+                                  doji_shadow)
+                        wz.oe = False
+                        weak_out.append(wz)
                     break                 # این بیس معتبر نیست
 
             z=Zone(symbol, tf, direction, proximal, distal,
@@ -948,7 +977,7 @@ def build_zones(df, symbol, tf, max_base_len, atr_s, legout_clear=None):
 
             # ۲) حاشیه‌ی سود: قیمت پیش از بازگشت به زون، چند برابر ارتفاع زون حرکت کرده؟
             #    (کاملاً گذشته‌نگر است: تا وقتی قیمت برنگردد، معامله‌ای هم رخ نمی‌دهد)
-            if height > 0:
+            if height > 0 and measure_departure:
                 best = 0.0
                 z_hi = z.high(); z_lo = z.low()
                 for k in range(j, min(j+200, n)):
@@ -975,24 +1004,31 @@ def build_zones(df, symbol, tf, max_base_len, atr_s, legout_clear=None):
             i += 1
     return zones
 
-def choch_confirm_zones(zones, df, min_body_atr=0.0):
+def choch_confirm_zones(zones, df, min_body_atr=0.0, weak=None, cluster_gap_atr=None,
+                        cluster_max_bars=None):
     """اعتبار بیس با «تأیید چاک» و «لگ‌اوت قوی».
 
     چاک = لگ‌اوتِ بیس، سقف/کفی را که «بیس مخالف خودش» ساخته با بادی (کلوز کندل) رد کند:
-      دیمند: بیس مخالف = آخرین سوپلایِ شکسته‌نشده‌ی بالای بیس که پیش از شروع بیس متولد شده.
-             سطح چاک = بالاترین high از شروع آن سوپلای تا شروع دیمند (آخرین سقف پایین‌تر).
-      سوپلای: برعکس — آخرین دیمند زیر بیس؛ سطح چاک = پایین‌ترین low (آخرین کف بالاتر).
-    بیس مخالف باید خودش کنسالیدیشن اوی داده باشد (همه‌ی زون‌های ورودی این تابع آن را دارند).
+      دیمند: بیس مخالف = آخرین سوپلایِ شکسته‌نشده‌ی بالای بیس که پیش از شروع بیس متولد شده و
+             کنسالیدیشن اوی داده. سطح چاک = بالاترین high از شروع آن سوپلای تا شروع دیمند.
+      سوپلای: برعکس — آخرین دیمند زیر بیس؛ سطح چاک = پایین‌ترین low.
+    بیس‌های مخالفِ چسبیده به آن (با یا بدون کنسالیدیشن اوی؛ weak = بیس‌های بدون اوی) یک بیس حساب
+    می‌شوند و چاک باید پشت دورترینشان بسته شود. چسبیده = حداکثر cluster_max_bars کندل و
+    cluster_gap_atr × ATR فاصله (فاصله‌ی قیمتی دو بیس یا دور شدن قیمت بینشان).
     چاک باید پیش از برگشت قیمت به بیس اتفاق بیفتد. بیس از بسته شدن دیرترینِ کندل کنسالیدیشن
     اوی و کندل چاک قابل معامله است (بدون نگاه به آینده).
     min_body_atr > 0: بدنه‌ی کندل خروج باید دست‌کم این ضریب × ATR باشد (لگ‌اوت قوی).
     زون‌های ضعیف هم می‌توانند «بیس مخالف» باشند؛ فقط خودشان قابل معامله نیستند."""
+    import bisect
     if not zones:
         return []
+    gap_k = CHOCH_CLUSTER_GAP_ATR if cluster_gap_atr is None else cluster_gap_atr
+    gap_n = CHOCH_CLUSTER_MAX_BARS if cluster_max_bars is None else cluster_max_bars
     tt = df["time"].to_numpy(dtype="datetime64[ns]")
     cl = df["close"].to_numpy(dtype=float)
     hi = df["high"].to_numpy(dtype=float)
     lo = df["low"].to_numpy(dtype=float)
+    atr_a = (df["atr"] if "atr" in df.columns else atr(df)).to_numpy(dtype=float)
     N = len(cl)
     B = 256
     nb = (N + B - 1) // B
@@ -1020,34 +1056,85 @@ def choch_confirm_zones(zones, df, min_body_atr=0.0):
     def idx(t):
         return int(np.searchsorted(tt, np.datetime64(pd.Timestamp(t), "ns")))
 
-    born = np.array([idx(z.created_time) for z in zones], dtype=np.int64)   # کندل کنسالیدیشن اوی
-    bs = np.array([idx(z.base_start) for z in zones], dtype=np.int64)       # اولین کندل بیس
-    be = np.array([idx(z.base_end) for z in zones], dtype=np.int64)         # آخرین کندل بیس
-    buy = np.array([z.direction == "BUY" for z in zones], dtype=bool)
-    zlo = np.array([z.low() for z in zones], dtype=float)
-    zhi = np.array([z.high() for z in zones], dtype=float)
+    allz = list(zones) + list(weak or [])
+    nq = len(zones)
+    born = np.array([idx(z.created_time) for z in allz], dtype=np.int64)   # کندل کنسالیدیشن اوی
+    bs = np.array([idx(z.base_start) for z in allz], dtype=np.int64)       # اولین کندل بیس
+    be = np.array([idx(z.base_end) for z in allz], dtype=np.int64)         # آخرین کندل بیس
+    buy = np.array([z.direction == "BUY" for z in allz], dtype=bool)
+    oe = np.arange(len(allz)) < nq                                         # کنسالیدیشن اوی داده؟
+    zlo = np.array([z.low() for z in allz], dtype=float)
+    zhi = np.array([z.high() for z in allz], dtype=float)
     # کندلی که هر زون در آن شکست: دیمند با کلوز زیر کفش، سوپلای با کلوز بالای سقفش
     brk = np.array([first_beyond(int(born[q]) + 1, zlo[q] if buy[q] else zhi[q], not buy[q])
-                    for q in range(len(zones))], dtype=np.int64)
+                    for q in range(len(allz))], dtype=np.int64)
+
+    # بیس‌های «زنده» هر جهت به ترتیب پایان بیس؛ بیس‌ها به ترتیب شروع بررسی می‌شوند
+    ins = np.argsort(born, kind="stable")
+    alive = {True: [], False: []}
+    p_ins = 0
     out = []
-    for q, z in enumerate(zones):
+    for q in sorted(range(nq), key=lambda q_: bs[q_]):
+        z = zones[q]
+        s0 = int(bs[q])
+        while p_ins < len(allz) and born[ins[p_ins]] < s0:
+            k_ = int(ins[p_ins])
+            bisect.insort(alive[bool(buy[k_])], (int(be[k_]), k_))
+            p_ins += 1
         if min_body_atr > 0 and z.conf_body_atr < min_body_atr:
             continue
-        s0 = int(bs[q])
-        if buy[q]:
-            cand = (~buy) & (born < s0) & (brk >= s0) & (zhi > zhi[q])   # سوپلای‌های زنده‌ی بالای بیس
-        else:
-            cand = buy & (born < s0) & (brk >= s0) & (zlo < zlo[q])      # دیمندهای زنده‌ی زیر بیس
-        if not cand.any():
+        lst = alive[not buy[q]]
+
+        def beyond(k_):
+            return (zhi[k_] > zhi[q]) if buy[q] else (zlo[k_] < zlo[q])
+
+        # بیس مخالف خودش = آخرین بیس مخالفِ زنده با کنسالیدیشن اوی که آن طرف بیس است
+        j = len(lst) - 1
+        opp = -1
+        while j >= 0:
+            k_ = lst[j][1]
+            if brk[k_] < s0:                    # شکسته شده؛ دیگر هیچ‌وقت زنده نمی‌شود
+                del lst[j]
+                j -= 1
+                continue
+            if oe[k_] and beyond(k_):
+                opp = k_
+                break
+            j -= 1
+        if opp < 0:
             continue
-        ci = np.flatnonzero(cand)
-        opp = int(ci[np.argmax(be[ci])])                                # بیس مخالف خودش = آخرینشان
+        # بیس‌های مخالفِ چسبیده به آن (قدیمی‌ترها) هم جزو همان بیس‌اند
         a0 = int(bs[opp])
+        c_lo, c_hi = zlo[opp], zhi[opp]
+        atr_q = atr_a[min(int(be[q]), N - 1)]
+        if gap_k > 0 and np.isfinite(atr_q) and atr_q > 0:
+            jj = j - 1
+            while jj >= 0:
+                k_ = lst[jj][1]
+                jj -= 1
+                if brk[k_] < s0:
+                    continue
+                if not beyond(k_):
+                    break
+                if a0 - int(be[k_]) - 1 > gap_n:
+                    break
+                # فاصله = فاصله‌ی قیمتی دو بیس یا اینکه قیمت بینشان چقدر دور شد (هر کدام بیشتر)
+                dist_ = max(0.0, zlo[k_] - c_hi, c_lo - zhi[k_])
+                e0, e1 = int(be[k_]) + 1, a0
+                if e1 > e0:
+                    if buy[q]:
+                        dist_ = max(dist_, min(zlo[k_], c_lo) - float(lo[e0:e1].min()))
+                    else:
+                        dist_ = max(dist_, float(hi[e0:e1].max()) - max(zhi[k_], c_hi))
+                if dist_ > gap_k * atr_q:
+                    break
+                c_lo, c_hi = min(c_lo, zlo[k_]), max(c_hi, zhi[k_])
+                a0 = min(a0, int(bs[k_]))
         if buy[q]:
-            level = float(hi[a0:s0].max())                              # آخرین سقف پایین‌تر
+            level = float(hi[a0:s0].max())                              # سقفِ دورترین بیس مخالف
         else:
-            level = float(lo[a0:s0].min())                              # آخرین کف بالاتر
-        k = first_beyond(int(be[q]) + 1, level, buy[q])                 # کلوز بادی پشت سطح = چاک
+            level = float(lo[a0:s0].min())                              # کفِ دورترین بیس مخالف
+        k = first_beyond(int(be[q]) + 1, level, bool(buy[q]))           # کلوز بادی پشت سطح = چاک
         if k >= N:
             continue
         b = int(born[q])
@@ -1057,6 +1144,7 @@ def choch_confirm_zones(zones, df, min_body_atr=0.0):
                 continue
         z.created_time = tt[max(k, b)]
         out.append(z)
+    out.sort(key=lambda z_: pd.Timestamp(z_.created_time))
     return out
 
 
@@ -1208,8 +1296,13 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                    invalidate_on_breach=False, min_profit_margin_r=0.0, min_departure_atr=0.0,
                    retry_rejected_zones=False, return_state=False,
                    book=None, alloc_mode=False, arm_untouched_zones=False,
-                   min_risk_spread=0.0, min_room_r=0.0, htf_location=False, trend_mode=None):
+                   min_risk_spread=0.0, min_room_r=0.0, htf_location=False, trend_mode=None,
+                   ltf_mode=None):
     """موتور استراتژی برای یک نماد — به‌صورت generator.
+
+    ltf_mode (تأیید ۱دقیقه): None = سفارش لیمیت روی بیس ۱۵دقیقه (روش فعلی) |
+      "zone" = قیمت به بیس برسد، چاک ۱دقیقه در جهت بیس بیاید، بعد اوردر روی همان بیس ۱۵دقیقه |
+      "base" = همان، ولی اوردر روی بیس ۱دقیقه‌ای که چاک را ساخت (ورود/استاپ/تارگت با همان درصدها).
 
     در هر کندل، درست سر جایی که ربات لایو تصمیم می‌گیرد کدام سفارش‌ها روی حساب
     بمانند، این تابع «فهرست خواسته‌هایش» را yield می‌کند و منتظر می‌ماند تا راننده
@@ -1218,7 +1311,13 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
     """
 
     bt_start = BACKTEST_START
+    # گرم‌کردن: زون‌ها/روند/ATR از WARMUP_DAYS قبل ساخته می‌شوند؛ معامله فقط از bt_start
+    warm_start = bt_start - pd.Timedelta(days=WARMUP_DAYS)
 
+    # تایم بزرگ (روزانه/هفتگی) اختیاری است؛ اگر نباشد زون بزرگ و فیبو ندارد
+    big_enabled = w1 is not None
+    if w1 is None:
+        w1 = d1
     h4 = h4.copy(); d1 = d1.copy(); w1 = w1.copy()
     for df in (h4, d1, w1):
         df["open"]=df["open"].astype(float)
@@ -1239,10 +1338,10 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         if m15 is not None:
             m15 = m15[m15["time"] <= BACKTEST_END].copy()
 
-    # کات اولیه از 2023 به بعد (برای منطق، نه ATR)
-    h4_ = h4[h4["time"] >= bt_start].copy()
-    d1_ = d1[d1["time"] >= bt_start].copy()
-    w1_ = w1[w1["time"] >= bt_start].copy()
+    # کات اولیه (برای منطق، نه ATR) — از شروع گرم‌کردن
+    h4_ = h4[h4["time"] >= warm_start].copy()
+    d1_ = d1[d1["time"] >= warm_start].copy()
+    w1_ = w1[w1["time"] >= warm_start].copy()
 
     if h4_.empty or d1_.empty or w1_.empty:
         metrics_df = pd.DataFrame([{
@@ -1253,7 +1352,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         return metrics_df, reasons_df, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     # شروع واقعی بک‌تست = جایی که هر سه تایم‌فریم بعد از 2023 دیتا دارند
-    global_start = max(bt_start, h4_["time"].min(), d1_["time"].min(), w1_["time"].min())
+    global_start = max(warm_start, h4_["time"].min(), d1_["time"].min(), w1_["time"].min())
 
     h4 = h4[h4["time"] >= global_start].reset_index(drop=True)
     d1 = d1[d1["time"] >= global_start].reset_index(drop=True)
@@ -1292,11 +1391,12 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
     _mins = int(zone_span / pd.Timedelta(minutes=1))
     zone_tf = {1: "M1", 5: "M5", 15: "M15", 30: "M30", 60: "H1", 240: "H4", 1440: "D1"}.get(_mins, f"{_mins}m")
 
-    w_z = dedup_zones_pit(build_zones(w1, symbol, "BIG", 12, w1["atr"]))
+    w_z = dedup_zones_pit(build_zones(w1, symbol, "BIG", 12, w1["atr"])) if big_enabled else []
     # بیس‌های تایم زون: کنسالیدیشن اوی (داخل build_zones) → لگ‌اوت قوی + تأیید چاک → حذف هم‌پوشان‌ها
-    h_raw = build_zones(h4, symbol, zone_tf, 6,  h4["atr"])
+    _weak = [] if CHOCH_CONFIRM else None          # بیس‌های بدون اوی — فقط برای «بیس‌های چسبیده»
+    h_raw = build_zones(h4, symbol, zone_tf, 6,  h4["atr"], weak_out=_weak)
     if CHOCH_CONFIRM:
-        h_raw = choch_confirm_zones(h_raw, h4, min_body_atr=MIN_LEGOUT_BODY_ATR)
+        h_raw = choch_confirm_zones(h_raw, h4, min_body_atr=MIN_LEGOUT_BODY_ATR, weak=_weak)
     elif MIN_LEGOUT_BODY_ATR > 0:
         h_raw = [z for z in h_raw if z.conf_body_atr >= MIN_LEGOUT_BODY_ATR]
     h_z = dedup_zones_pit(h_raw)
@@ -1441,7 +1541,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         return bool((m & _hz_buy).any()) if direction == "SELL" else bool((m & ~_hz_buy).any())
 
     # ۲) فیبوی آخرین سوئینگ هفتگی (فقط هفته‌های بسته‌شده)
-    if FIB_FILTER and len(w1):
+    if FIB_FILTER and big_enabled and len(w1):
         _fib_lo, _fib_hi = weekly_fib_range(w1, n=FIB_SWING_N)
         _fib_t = (w1["time"] + big_span).to_numpy(dtype="datetime64[ns]")   # زمان بسته شدن هر هفته
     else:
@@ -1577,6 +1677,12 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         "رد_به_خاطر_فیبوی_هفتگی": 0,
         "رد_به_خاطر_زون_مخالف_تایم_بالا": 0,
         "رد_به_خاطر_نزدیکی_زون_مخالف": 0,
+        "لغو_شکست_بیس_با_کلوز_۱۵دقیقه": 0,
+        "رسیدن_به_بیس_۱۵دقیقه": 0,
+        "تأیید_چاک_۱دقیقه": 0,
+        "ورود_بازار_بعد_از_تأیید": 0,
+        "لغو_دور_شدن_بدون_ورود": 0,
+        "لغو_استاپ_۱دقیقه_کوچک": 0,
     }
 
     # اسپرد (برحسب قیمت) برای مدل Bid/Ask: خرید لیمیت با Ask پر می‌شود و فروش با Ask بسته می‌شود
@@ -1592,6 +1698,27 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         m15_c = m15["close"].astype(float).values
 
     H4_SPAN = np.timedelta64(zone_span.value, "ns")     # طول کندل تایم زون
+
+    # ---------- تأیید ۱دقیقه: بیس‌های ۱دقیقه‌ای که چاک داده‌اند (همان قوانین بیس ۱۵دقیقه) ----------
+    ltf_on = bool(ltf_mode) and m15_t is not None
+    conf_at = {}
+    if ltf_on:
+        _m1 = pd.DataFrame({"time": m15["time"].values, "open": m15_o, "high": m15_h,
+                            "low": m15_l, "close": m15_c})
+        _m1["atr"] = atr(_m1)
+        _wk1 = []
+        _z1 = build_zones(_m1, symbol, "LTF", 6, _m1["atr"], weak_out=_wk1, measure_departure=False)
+        _z1 = choch_confirm_zones(_z1, _m1, min_body_atr=MIN_LEGOUT_BODY_ATR, weak=_wk1)
+        _L_buy = np.array([z1.direction == "BUY" for z1 in _z1], dtype=bool)
+        _L_lo = np.array([z1.low() for z1 in _z1], dtype=float)
+        _L_hi = np.array([z1.high() for z1 in _z1], dtype=float)
+        _L_prox = np.array([z1.proximal for z1 in _z1], dtype=float)
+        _L_dist = np.array([z1.distal for z1 in _z1], dtype=float)
+        _L_be = np.array([np.searchsorted(m15_t, np.datetime64(pd.Timestamp(z1.base_end), "ns")) for z1 in _z1],
+                         dtype=np.int64)
+        for q1, z1 in enumerate(_z1):        # کندل ۱دقیقه‌ای که چاک در آن بسته شد → بیس‌ها
+            j_ = int(np.searchsorted(m15_t, np.datetime64(pd.Timestamp(z1.created_time), "ns")))
+            conf_at.setdefault(j_, []).append(q1)
 
     def _m15_range(t_bar):
         if m15_t is None:
@@ -1693,6 +1820,110 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 "eff_entry":float(eff_entry),"t":t_now,"test":test_no,
                 "active":True,"filled":False,"fill_time":None,"cancel":None,
                 "risk": float(risk)}
+
+    def ltf_cancel(p, t_now, key, why):
+        p["active"] = False
+        p["cancel"] = why
+        reasons[key] += 1
+        set_final(zone_df, p["z"].zone_id, "لغو شد", why, t_now, idx=z_idx)
+        log_event(events, t_now, symbol, p["z"].zone_id, "Canceled", key)
+
+    def ltf_open(p, t_bar, j, j1, eff_entry, in_bar_fill):
+        """پوزیشن از کندل ۱دقیقه‌ی j؛ in_bar_fill = لیمیت داخل همان کندل پر شد (وگرنه ورود با کلوز j).
+        بقیه‌ی همین کندل ۱۵دقیقه روی ۱دقیقه جلو می‌رود. خروجی: پوزیشن باز یا None (بسته شد)."""
+        direction = p["z"].direction
+        risk = (eff_entry - p["sl"]) if direction == "BUY" else (p["sl"] - eff_entry)
+        if risk <= 0:
+            ltf_cancel(p, t_bar, "لغو_استاپ_۱دقیقه_کوچک", "لغو: استاپ نامعتبر بعد از تأیید")
+            return None
+        fill_t = pd.Timestamp(m15_t[j])
+        p["filled"] = True; p["active"] = False; p["fill_time"] = fill_t
+        reasons["ورود_انجام_شد"] += 1
+        _zset(p["z"].zone_id, "زمان_پرشدن", fill_t)
+        log_event(events, fill_t, symbol, p["z"].zone_id, "Filled", "")
+        if book is not None:
+            risk_amt = book.risk_amount(t_bar)
+            book.open_total += 1
+        else:
+            risk_amt = equity * (1.0 - reserve) * risk_per_trade
+        trigger = (eff_entry + MANAGE_TRIGGER_R * risk) if direction == "BUY" else (eff_entry - MANAGE_TRIGGER_R * risk)
+        pos = {"ZoneID": p["z"].zone_id, "direction": direction, "eff_entry": float(eff_entry),
+               "sl": float(p["sl"]), "tp": float(p["tp"]), "risk": float(risk), "risk_amt": float(risk_amt),
+               "fill_time": fill_t, "test": p["test"], "z": p["z"], "trigger": float(trigger), "managed": False}
+        if in_bar_fill:
+            fav = entry_bar_fav(direction, eff_entry, m15_o[j], m15_h[j], m15_l[j], m15_c[j])
+            ex = process_pos_candle(pos, m15_h[j], m15_l[j], t_bar, fav=fav)
+            if ex[0]:
+                finalize_trade(pos, t_bar, float(ex[1]), ex[2])
+                return None
+        for jj in range(j + 1, j1):
+            ex = process_pos_candle(pos, m15_h[jj], m15_l[jj], t_bar)
+            if ex[0]:
+                finalize_trade(pos, t_bar, float(ex[1]), ex[2])
+                return None
+        return pos
+
+    def ltf_step(p, t_bar):
+        """یک کندل ۱۵دقیقه برای سفارشِ «تأیید ۱دقیقه» روی کندل‌های ۱دقیقه:
+        armed (منتظر رسیدن قیمت به بیس) → watch (منتظر چاک ۱دقیقه) → order (اوردر لیمیت) → پوزیشن.
+        خروجی: پوزیشن باز یا None."""
+        rng = _m15_range(t_bar)
+        if rng is None:
+            return None
+        j, j1 = rng
+        buy_ = p["z"].direction == "BUY"
+        while j < j1:
+            st = p["stage"]
+            if st == "armed":
+                # قیمت به بیس ۱۵دقیقه رسید (همان نقطه‌ی ورود فعلی)
+                if (buy_ and m15_l[j] + spr <= p["entry"]) or (not buy_ and m15_h[j] >= p["entry"]):
+                    p["stage"] = "watch"
+                    p["j_reach"] = j
+                    reasons["رسیدن_به_بیس_۱۵دقیقه"] += 1
+            elif st == "watch":
+                for q1 in conf_at.get(j, ()):
+                    # بیس ۱دقیقه هم‌جهت، بعد از رسیدن قیمت، و روی همان بیس ۱۵دقیقه
+                    if _L_buy[q1] != buy_ or _L_be[q1] < p["j_reach"]:
+                        continue
+                    if (buy_ and _L_lo[q1] > p["entry"]) or (not buy_ and _L_hi[q1] < p["entry"]):
+                        continue
+                    reasons["تأیید_چاک_۱دقیقه"] += 1
+                    log_event(events, pd.Timestamp(m15_t[j]), symbol, p["z"].zone_id, "LTF_CHoCH", "")
+                    if ltf_mode == "base":
+                        h1 = _L_hi[q1] - _L_lo[q1]
+                        if buy_:
+                            ent1 = _L_prox[q1] + entry_off * h1
+                            sl1 = _L_dist[q1] - sl_off * h1
+                            r1 = ent1 - sl1
+                            tp1 = ent1 + rr * r1
+                        else:
+                            ent1 = _L_prox[q1] - entry_off * h1
+                            sl1 = _L_dist[q1] + sl_off * h1
+                            r1 = sl1 - ent1
+                            tp1 = ent1 - rr * r1
+                        if r1 <= 0 or r1 < LTF_MIN_RISK_SPREAD * spread_ref:
+                            ltf_cancel(p, t_bar, "لغو_استاپ_۱دقیقه_کوچک",
+                                       f"لغو: استاپ بیس ۱دقیقه کمتر از {LTF_MIN_RISK_SPREAD:g} برابر اسپرد")
+                            return None
+                        p.update(entry=float(ent1), sl=float(sl1), tp=float(tp1), eff_entry=float(ent1),
+                                 risk=float(r1))
+                    p["stage"] = "order"
+                    # قیمتِ لحظه‌ی تأیید از نقطه‌ی ورود گذشته؟ → لیمیت معنا ندارد، ورود با قیمت بازار
+                    if (buy_ and m15_c[j] + spr <= p["entry"]) or (not buy_ and m15_c[j] >= p["entry"]):
+                        reasons["ورود_بازار_بعد_از_تأیید"] += 1
+                        return ltf_open(p, t_bar, j, j1, m15_c[j] + spr if buy_ else m15_c[j], False)
+                    break
+            else:  # order
+                if (buy_ and m15_l[j] + spr <= p["entry"]) or (not buy_ and m15_h[j] >= p["entry"]):
+                    return ltf_open(p, t_bar, j, j1, p["entry"], True)
+                far = (m15_h[j] >= p["entry"] + LTF_CANCEL_R * p["risk"]) if buy_ \
+                    else (m15_l[j] + spr <= p["entry"] - LTF_CANCEL_R * p["risk"])
+                if far:
+                    ltf_cancel(p, t_bar, "لغو_دور_شدن_بدون_ورود",
+                               f"لغو: قیمت {LTF_CANCEL_R:g}R دور شد و اوردر پر نشد")
+                    return None
+            j += 1
+        return None
 
     def finalize_trade(pos, exit_time, exit_price, reason):
         nonlocal equity, peak, max_dd
@@ -1979,6 +2210,13 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         if _exp_k:
             live_k = live_k[~np.isin(live_k, _exp_k)]
 
+        if t < bt_start:
+            # گرم‌کردن: فقط لمس زون‌ها دنبال می‌شود؛ زونی که پیش از شروع بک‌تست لمس شده مصرف‌شده است
+            if len(live_k):
+                for k in live_k[_Z_TC[live_k] > 0]:
+                    used.add(id(h_z[k]))
+            continue
+
         # سطح نزدیک‌ترین زون‌های مخالف برای «جای تا زون مخالف» — یک بار در هر کندل
         levels = room_levels(t, o, live_k) if min_room_r > 0 else None
 
@@ -2071,7 +2309,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
             # عین ربات: اگر قیمتِ لحظه‌ی ثبت (باز شدن کندل) از نقطه‌ی ورود رد شده باشد، سفارش
             # لیمیت معنا ندارد؛ زون سهمیه نمی‌گیرد و برای کندل‌های بعد (اگر قیمت برگشت) می‌ماند.
-            if NO_SAME_BAR_TOUCH_FILL:
+            if NO_SAME_BAR_TOUCH_FILL and not ltf_on:
                 _h = z.high() - z.low()
                 _ent = z.proximal + entry_off * _h if z.direction == "BUY" else z.proximal - entry_off * _h
                 if (z.direction == "BUY" and _ent >= o + spr) or (z.direction == "SELL" and _ent <= o):
@@ -2143,7 +2381,16 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             if book is not None and book.open_total >= book.max_open_total:
                 reasons["رد_به_خاطر_سقف_پوزیشن_کل_حساب"] += 1
                 continue
-            pending.append(make_order(z, t, test_no))
+            _po = make_order(z, t, test_no)
+            if ltf_on:
+                # تأیید ۱دقیقه: اگر قیمت همین حالا روی بیس است مستقیم منتظر چاک می‌مانیم
+                _rg = _m15_range(t)
+                _at = (_po["entry"] >= o + spr) if z.direction == "BUY" else (_po["entry"] <= o)
+                _po["stage"] = "watch" if (_at and _rg is not None) else "armed"
+                _po["j_reach"] = _rg[0] if _rg is not None else 0
+                if _po["stage"] == "watch":
+                    reasons["رسیدن_به_بیس_۱۵دقیقه"] += 1
+            pending.append(_po)
             set_final(zone_df, z.zone_id, "سفارش ثبت شد", "در انتظار پر شدن", t, idx=z_idx)
             log_event(events, t, symbol, z.zone_id, "OrderPlaced", f"تست={test_no}")
             used.add(id(z))
@@ -2181,6 +2428,19 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                               f"قیمت {dist_cancel_r:g}R دور شد بدون ورود", t, idx=z_idx)
                     log_event(events, t, symbol, p["z"].zone_id, "Canceled", "FarAway")
 
+        # ---------- بی‌اعتبار شدن بیس: کندل ۱۵دقیقه‌ی قبلی پشت دیستال بسته شد ----------
+        if invalidate_on_breach:
+            for p in pending:
+                if not p["active"] or p["filled"]:
+                    continue
+                _zz = p["z"]
+                if (_zz.direction == "BUY" and c_prev < _zz.distal) or (_zz.direction == "SELL" and c_prev > _zz.distal):
+                    p["active"] = False
+                    p["cancel"] = "لغو: کندل ۱۵دقیقه پشت بیس بسته شد"
+                    reasons["لغو_شکست_بیس_با_کلوز_۱۵دقیقه"] += 1
+                    set_final(zone_df, _zz.zone_id, "لغو شد", "کندل پشت بیس بسته شد", t, idx=z_idx)
+                    log_event(events, t, symbol, _zz.zone_id, "Canceled", "ZoneBreached")
+
         # ---------- fills + (NEW) exit-same-bar ----------
         new_open_positions = []
         for p in pending:
@@ -2193,6 +2453,12 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 reasons["لغو_به_خاطر_رنج_یا_روند_لحظه_ورود"] += 1
                 set_final(zone_df, p["z"].zone_id, "لغو شد", "عدم هم‌جهتی/رنج در لحظه ورود", t, idx=z_idx)
                 log_event(events, t, symbol, p["z"].zone_id, "Canceled", "Trend/Range at Fill")
+                continue
+
+            if ltf_on:
+                _pos = ltf_step(p, t)
+                if _pos is not None:
+                    new_open_positions.append(_pos)
                 continue
 
             filled_now = False
@@ -3238,7 +3504,27 @@ def write_simple_excel(sw, runs, frames):
             t0 = ct.iloc[0]
             print(f"   دلیل {int(t0['استاپ_کامل'])} استاپ «{name}»: روند ۴ساعته {t0['٪_روند']}٪ | "
                   f"بیس ۱۵دقیقه {t0['٪_بیس']}٪ | نامشخص {t0['٪_نامشخص']}٪")
-    pd.concat(parts, ignore_index=True).to_excel(sw, sheet_name="کلی", index=False)
+    main_tbl = pd.concat(parts, ignore_index=True)
+    main_tbl.to_excel(sw, sheet_name="کلی", index=False)
+    # قیف هر اجرا: چند بار قیمت به بیس رسید، چند بار چاک ۱دقیقه آمد، چند معامله شد و چرا لغو شد
+    keys = [("رسیدن_به_بیس_۱۵دقیقه", "قیمت_به_بیس_رسید"), ("تأیید_چاک_۱دقیقه", "چاک_۱دقیقه_آمد"),
+            ("ورود_انجام_شد", "معامله"), ("ورود_بازار_بعد_از_تأیید", "ورود_با_قیمت_بازار"),
+            ("لغو_شکست_بیس_با_کلوز_۱۵دقیقه", "لغو_کلوز_پشت_بیس"),
+            ("لغو_دور_شدن_بدون_ورود", "لغو_دور_شدن_بدون_ورود"),
+            ("لغو_استاپ_۱دقیقه_کوچک", "لغو_استاپ_۱دقیقه_کوچک")]
+    funnel = []
+    for name, results, _book, _tm in runs:
+        tot = {k: 0 for k, _ in keys}
+        for r in results.values():
+            rdf = r[1]
+            if rdf is None or rdf.empty or "دلیل" not in rdf.columns:
+                continue
+            for k, _ in keys:
+                tot[k] += int(rdf.loc[rdf["دلیل"] == k, "تعداد"].sum())
+        funnel.append({"اجرا": name, **{lab: tot[k] for k, lab in keys}})
+    pd.DataFrame([{"اجرا": "قیف هر اجرا (تعداد کل در همه‌ی نمادها)"}]).to_excel(
+        sw, sheet_name="کلی", index=False, header=False, startrow=len(main_tbl) + 2)
+    pd.DataFrame(funnel).to_excel(sw, sheet_name="کلی", index=False, startrow=len(main_tbl) + 3)
     cdf = pd.concat(causes, ignore_index=True)
     cdf.to_excel(sw, sheet_name="دلیل_استاپ‌ها", index=False)
     notes = pd.DataFrame({"توضیح": [
@@ -3499,11 +3785,18 @@ def main():
           f"فیلتر رنج: {'روشن' if RANGE_FILTER else 'خاموش'}")
     print(f"   بیس: کنسالیدیشن اوی {'تا ' + str(LEGOUT_CLEAR_BARS) + ' کندل' if LEGOUT_CLEAR_BARS else 'خاموش'} | "
           f"لگ‌اوت قوی {'≥ ' + str(MIN_LEGOUT_BODY_ATR) + '×ATR' if MIN_LEGOUT_BODY_ATR else 'خاموش'} | "
-          f"تأیید چاک {'روشن' if CHOCH_CONFIRM else 'خاموش'}")
+          f"تأیید چاک {'روشن' if CHOCH_CONFIRM else 'خاموش'} (بیس‌های چسبیده یکی: ≤{CHOCH_CLUSTER_MAX_BARS} کندل و "
+          f"≤{CHOCH_CLUSTER_GAP_ATR:g}×ATR) | بی‌اعتباری با کلوز پشت بیس: "
+          f"{'روشن' if ZONE_INVALIDATE_ON_CLOSE else 'خاموش'}")
+    _has_big = TF_SETS[STRATEGY_TF][2] is not None
     print(f"   تایم بالا: داخل زون مخالف {'ممنوع' if HTF_ZONE_FILTER else 'آزاد'} | "
           f"فاصله تا زون مخالف {'≥ ' + str(OPP_ZONE_ROOM_R) + 'R' if OPP_ZONE_ROOM_R else 'خاموش'} | "
-          f"فیبو {'بای زیر ' + str(FIB_BUY_MAX) + '، سل بالای ' + str(FIB_SELL_MIN) if FIB_FILTER else 'خاموش'} | "
+          f"فیبو {('بای زیر ' + str(FIB_BUY_MAX) + '، سل بالای ' + str(FIB_SELL_MIN)) if (FIB_FILTER and _has_big) else 'خاموش (تایم روزانه ندارد)' if FIB_FILTER else 'خاموش'} | "
           f"سی‌پی پشت‌سرهم: {MAX_CONSECUTIVE_CP if MAX_CONSECUTIVE_CP else 'خاموش'}")
+    print(f"   تأیید ۱دقیقه: اوردرِ بعد از تأیید با دور شدن {LTF_CANCEL_R:g}R بدون پر شدن لغو | "
+          f"ورود روی بیس ۱دقیقه فقط اگر استاپ ≥ {LTF_MIN_RISK_SPREAD:g}× اسپرد")
+    print(f"   بازه‌ی معامله: {BACKTEST_START.date()} تا {BACKTEST_END.date() if BACKTEST_END is not None else 'پایان دیتا'} "
+          f"(گرم‌کردن {WARMUP_DAYS} روز قبلش)")
     print("🔧 تنظیمات واقع‌بینی بک‌تست:")
     print(f"   کندل ورود بدون تایم پایین‌تر: {ENTRY_BAR_MODE}"
           f"{'  ⚠️ (خوش‌بینانه — فقط برای مقایسه)' if ENTRY_BAR_MODE == 'optimistic' else ''}")
@@ -3552,7 +3845,8 @@ def main():
         if _short:
             print(f"   ⚠️ این نمادها دیتای کوتاه‌تری دارند: {', '.join(_short)}")
         if pd.Timestamp(d0) < BACKTEST_START:
-            print(f"   ⚠️ بک‌تست از {BACKTEST_START.date()} شروع می‌شود، پس دیتای قبل از آن استفاده نمی‌شود.")
+            print(f"   معامله‌ها از {BACKTEST_START.date()}؛ {WARMUP_DAYS} روز قبلش فقط برای گرم‌کردن روند و زون‌ها "
+                  f"خوانده می‌شود و قبل‌ترش استفاده نمی‌شود.")
 
     live_results = None
     live_book = None
@@ -3563,7 +3857,8 @@ def main():
               f"هر نماد حداکثر {LIVE_MAX_PENDING_PER_SYMBOL} سفارش")
         live_results, live_book, live_alloc = portfolio_live_replay(
             frames, spreads, entry_off=DEFAULT_ENTRY_OFF, sl_off=DEFAULT_SL_OFF,
-            rr=DEFAULT_RR, manage_mode=DEFAULT_MANAGE, min_risk_atr=DEFAULT_MIN_RISK_ATR)
+            rr=DEFAULT_RR, manage_mode=DEFAULT_MANAGE, min_risk_atr=DEFAULT_MIN_RISK_ATR,
+            invalidate_on_breach=ZONE_INVALIDATE_ON_CLOSE)
         print(f"   اکویتی پایانی: {live_book.equity:,.0f} | "
               f"بازده {(live_book.equity/live_book.start_equity-1)*100:.2f}٪ | "
               f"حداکثر افت {live_book.max_dd*100:.2f}٪")
@@ -3572,9 +3867,7 @@ def main():
     design_sheets, design_rows = [], []
     simple_runs = []
     if LIVE_MODE and live_book is not None:
-        simple_runs.append(({"choch": "روند فقط با چاک", "choch_tl": "روند با چاک و ترندلاین",
-                             "legacy": "روند به روش قدیمی ربات"}.get(TREND_MODE, "مبنا"),
-                            live_results, live_book, TREND_MODE))
+        simple_runs.append(("ورود لیمیت ۱۵دقیقه (بدون تأیید)", live_results, live_book, TREND_MODE))
     if DESIGN_TESTS and LIVE_MODE and live_book is not None and DESIGN_VARIANTS:
         _t0 = max(pd.Timestamp(d0), BACKTEST_START) if _starts else BACKTEST_START
         mid_t = _t0 + (pd.Timestamp(d1_) - _t0) / 2 if _starts else BACKTEST_START
@@ -3587,8 +3880,13 @@ def main():
         print(f"\n🧪 آزمایش: {n_var} اجرای کامل دیگر (هر کدام جدا) — مرز دو نیمه: {mid_t.date()}")
         for k, (name, (kw, desc)) in enumerate(DESIGN_VARIANTS.items(), start=1):
             print(f"   [{k}/{n_var}] {name}: {desc} ...", flush=True)
+            if kw.get("ltf_mode") and all(fr[3] is None for fr in frames.values()):
+                print("        ⚠️ دیتای ۱دقیقه داخل ZIPها نیست (فایل -1.csv) → این اجرا رد شد. "
+                      "export_data را با تایم M1 اجرا کن.")
+                continue
             call = dict(entry_off=DEFAULT_ENTRY_OFF, sl_off=DEFAULT_SL_OFF, rr=DEFAULT_RR,
-                        manage_mode=DEFAULT_MANAGE, min_risk_atr=DEFAULT_MIN_RISK_ATR)
+                        manage_mode=DEFAULT_MANAGE, min_risk_atr=DEFAULT_MIN_RISK_ATR,
+                        invalidate_on_breach=ZONE_INVALIDATE_ON_CLOSE)
             call.update(kw)
             try:
                 res_v, book_v, _al = portfolio_live_replay(frames, spreads, **call)
