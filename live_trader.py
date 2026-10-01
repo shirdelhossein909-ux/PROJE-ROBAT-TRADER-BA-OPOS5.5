@@ -15,8 +15,17 @@
   - ضدضربه: قطع ارتباط → اخطار + تلاش دوباره هر چند ثانیه تا وصل شود؛ هیچ خطایی
     ربات را ساکت نمی‌کند؛ فایل ضربان قلب (logs/heartbeat.txt) هر دور به‌روز می‌شود.
 
-اجرا:  python live_trader.py     (متاتریدر ۵ باز، لاگینِ دمو، Algo Trading روشن)
-توقف:  Ctrl+C
+  - نسخه ۳ (رفع ایرادهای ۶ هفته لایو):
+      · سیو سود فقط یک بار (حجم پوزیشن با حجم ورودش مقایسه می‌شود؛ کد برگشتی 0 دیگر گولش نمی‌زند)
+      · نتیجه‌ی هر دستور با خواندن دوباره‌ی حساب تأیید می‌شود
+      · شناسه‌ی پایدار زون + تطبیق با قیمت → سفارش تکراری نمی‌گذارد و تکراری‌های قبلی را جمع می‌کند
+      · نمادی که بازارش بسته است (طلا ۰۰ تا ۰۱): دستورهایش صف می‌شوند و با باز شدن بازار انجام می‌شوند
+      · حجم سفارش‌ها فقط وقتی سشن واقعاً عوض می‌شود تغییر می‌کند (نه سر هر کندل و نه ساعت ۰۰)
+      · فقط یک ربات هم‌زمان؛ نگهبان (watchdog.py) اگر ربات افتاد یا گیر کرد دوباره بالا می‌آوردش
+      · توکن بله از فایل bale_token.txt خوانده می‌شود، نه از داخل کد
+
+اجرا:  start_robot.bat          (متاتریدر ۵ باز، لاگینِ دمو، Algo Trading روشن)
+توقف:  Ctrl+C  یا  stop_robot.bat   (در هر دو حالت نگهبان دوباره روشنش نمی‌کند)
 """
 
 import os
@@ -73,6 +82,8 @@ RR = 3.0                  # حد سود = ۳ برابر ریسک
 
 POLL_SECONDS = 30         # هر چند ثانیه وضعیت را چک کند
 RECONNECT_SECONDS = 5     # فاصله‌ی تلاش‌های اتصال دوباره
+RETRY_POLL_SECONDS = 5    # وقتی دستوری مانده (بازار نماد بسته بود / قیمت نبود)، هر چند ثانیه دوباره تلاش شود
+STALE_TICK_SECONDS = 120  # آخرین قیمت نماد از این قدیمی‌تر باشد (نسبت به بقیه) → بازار آن نماد بسته حساب می‌شود
 H4_BARS = 2000            # عمق تاریخچه برای بازپخش استراتژی
 D1_BARS = 500
 W1_BARS = 300
@@ -83,14 +94,39 @@ ALLOW_REAL = False        # قفل ایمنی: فقط حساب دمو
 # (از جمله mt5.initialize وقتی خودش ترمینال را بالا می‌آورد) باعث می‌شود لاگ‌ها
 # جای دیگری بیفتند — بدون هیچ خطایی. یک بار همین اتفاق افتاد و روزها طول کشید
 # تا معلوم شود لاگ کجا رفته.
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 # --- خبررسانی به پیام‌رسان «بله» ---
-BALE_TOKEN = "2042736970:Cy7cay7YmRj08xrJveIgHiGT2UNV5lA5sLw"           # توکن رباتی که در بله ساختی (خالی = خبررسانی خاموش)
+# توکن ربات بله را اینجا ننویس (این فایل روی گیت‌هاب می‌رود و هر کسی توکن را ببیند، ربات بله‌ات را در اختیار دارد).
+# توکن را در یک فایل متنی به اسم bale_token.txt کنار همین فایل بگذار (فقط خود توکن، در یک خط).
+# اگر هیچ توکنی نباشد، خبررسانی بله خاموش است و ربات کارش را می‌کند.
+BALE_TOKEN = ""
 BALE_CHAT_ID = ""         # خالی بگذار تا خودش پیدا کند (فقط اول یک پیام به ربات بله‌ات بده)
 DAILY_REPORT_HOUR = 12    # ساعت ارسال گزارش‌های روزانه/هفتگی/ماهانه (به وقت VPS)
 START_BALANCE = 100000.0  # سرمایه‌ی اولیه — برای محاسبه‌ی «سود کل حساب از شروع» (روی حساب جدید عوضش کن)
 # =============================================
+
+def _read_secret(fname, env_name):
+    """اول متغیر محیطی، بعد فایل کنار ربات (utf-8-sig تا BOM نوت‌پد مشکلی نسازد)."""
+    v = os.environ.get(env_name, "").strip()
+    if v:
+        return v
+    try:
+        with open(os.path.join(BASE_DIR, fname), encoding="utf-8-sig") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+if not BALE_TOKEN:
+    BALE_TOKEN = _read_secret("bale_token.txt", "BALE_TOKEN")
+
+# کدهای برگشتی متاتریدر
+RC_DONE = {10008, 10009, 10010}           # ثبت شد / انجام شد / بخشی انجام شد
+# خطاهای گذرا (بازار بسته، نبود قیمت، قطعی، شلوغی...) — بعداً دوباره تلاش می‌شود
+RC_TRANSIENT = {0, 10004, 10011, 10012, 10018, 10020, 10021, 10024, 10027, 10031}
+EXIT_NO_RESTART = 3       # کد خروجی که به start_robot.bat می‌گوید «دوباره راه‌اندازی نکن»
 
 # بازپخش لایو باید کل پنجره‌ی دیتا را ببیند (بدون برش تاریخ بک‌تست)
 rb.BACKTEST_START = pd.Timestamp("2000-01-01")
@@ -181,6 +217,13 @@ def bale_flush():
         return
     if _bale_chat_id is None:
         _bale_chat_id = BALE_CHAT_ID or _bale_detect_chat()
+        if _bale_chat_id:
+            # نگهبان (watchdog.py) هم از همین چت‌آیدی برای هشدار استفاده می‌کند
+            try:
+                with open(os.path.join(LOG_DIR, "bale_chat_id.txt"), "w", encoding="utf-8") as f:
+                    f.write(str(_bale_chat_id))
+            except Exception:
+                pass
     if not _bale_chat_id:
         return
     while _bale_queue:
@@ -242,7 +285,7 @@ def connect_with_retry(bale_notify=True):
         if acc.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO and not ALLOW_REAL:
             log(f"🛑 حساب {acc.login} دمو نیست! این نسخه فقط روی دمو کار می‌کند. ربات خاموش شد.")
             mt5.shutdown()
-            sys.exit(1)
+            sys.exit(EXIT_NO_RESTART)
 
         log(f"✅ اتصال برقرار شد | حساب {acc.login} ({acc.server}) | "
             f"{'دمو' if acc.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO else 'واقعی'} | "
@@ -317,6 +360,138 @@ def resolve_symbol(base):
     return None
 
 
+# ---------------- ساعت سرور، باز بودن بازار هر نماد، تأیید دستورها ----------------
+_symbols_live = {}   # base → اسم نماد نزد بروکر (در main پر می‌شود)
+
+
+# زمان تیک‌ها و کندل‌ها به «وقت سرور» است (مثلاً UTC+3)، نه UTC. اختلاف ساعت سرور با ساعت واقعی
+# از روی تیک‌هایی که همین الان می‌رسند یاد گرفته و در فایل نگه داشته می‌شود (برای آخر هفته و ری‌استارت).
+_srv_offset = [None]          # ثانیه: ساعت سرور − ساعت واقعی
+_last_tick_seen = {}
+_OFFSET_FILE = os.path.join(LOG_DIR, "server_offset.txt")
+try:
+    with open(_OFFSET_FILE, encoding="utf-8") as _f:
+        _srv_offset[0] = int(_f.read().strip())
+except Exception:
+    pass
+
+
+def learn_server_offset():
+    """فقط از تیکی یاد می‌گیرد که از دور قبل تا الان رسیده (پس واقعاً تازه است)."""
+    now = _time.time()
+    for name in _symbols_live.values():
+        try:
+            tk = mt5.symbol_info_tick(name)
+        except Exception:
+            continue
+        if tk is None or not tk.time:
+            continue
+        prev = _last_tick_seen.get(name)
+        _last_tick_seen[name] = tk.time
+        if prev is None or tk.time == prev:
+            continue
+        diff = tk.time - now
+        k = int(round(diff / 1800.0)) * 1800          # اختلاف ساعت سرورها مضرب نیم ساعت است
+        if abs(diff - k) > 60:
+            continue
+        if k != _srv_offset[0]:
+            _srv_offset[0] = k
+            try:
+                with open(_OFFSET_FILE, "w", encoding="utf-8") as f:
+                    f.write(str(k))
+            except Exception:
+                pass
+        return
+
+
+def server_now():
+    """ساعت فعلی سرور بروکر. اگر اختلاف ساعت سرور هنوز معلوم نیست: تازه‌ترین تیکِ نمادهای سبد.
+    (زمان تیک‌ها به وقت سرور است؛ مقایسه‌اش با ساعت ویندوز چند ساعت خطا دارد.)"""
+    if _srv_offset[0] is not None:
+        return _time.time() + _srv_offset[0]
+    best = None
+    for name in _symbols_live.values():
+        try:
+            tk = mt5.symbol_info_tick(name)
+        except Exception:
+            tk = None
+        if tk is not None and tk.time:
+            best = tk.time if best is None else max(best, tk.time)
+    return best
+
+
+def symbol_tradeable(name):
+    """بازار همین نماد الان باز است؟ (مثلاً طلا ساعت ۰۰ تا ۰۱ سرور بسته است ولی بقیه بازند)"""
+    try:
+        tk = mt5.symbol_info_tick(name)
+    except Exception:
+        return False
+    if tk is None or not tk.time or tk.bid <= 0:
+        return False
+    now = server_now()
+    return now is None or (now - tk.time) <= STALE_TICK_SECONDS
+
+
+def _rc(res):
+    return getattr(res, "retcode", None)
+
+
+def _rc_txt(res):
+    if res is None:
+        return f"پاسخی نیامد ({mt5.last_error()})"
+    return f"کد {res.retcode} | {getattr(res, 'comment', '')}"
+
+
+def _my_orders(name=None):
+    try:
+        lst = mt5.orders_get(symbol=name) if name else mt5.orders_get()
+    except Exception:
+        lst = None
+    return [o for o in (lst or ()) if o.magic == MAGIC]
+
+
+def _order_alive(ticket):
+    """True = سفارش هنوز روی حساب است | False = نیست | None = معلوم نشد"""
+    try:
+        r = mt5.orders_get(ticket=ticket)
+    except Exception:
+        return None
+    if r is None:
+        return None
+    return len(r) > 0
+
+
+_gone_tickets = set()   # سفارش‌هایی که همین الان لغو کردیم (ممکن است لحظه‌ای هنوز در فهرست باشند)
+
+
+def _same_order(o, direction, entry, sl, digits):
+    otype = mt5.ORDER_TYPE_BUY_LIMIT if direction == "BUY" else mt5.ORDER_TYPE_SELL_LIMIT
+    tol = 0.6 * 10 ** (-int(digits))
+    return (o.type == otype and abs(o.price_open - entry) <= tol and abs(o.sl - sl) <= tol)
+
+
+def _find_order(name, direction, entry, sl, digits, exclude=()):
+    """سفارش خودمان با همین جهت/ورود/استاپ روی حساب هست؟ (تأیید ثبت + جلوگیری از سفارش تکراری)"""
+    for o in _my_orders(name):
+        if o.ticket in _gone_tickets or o.ticket in exclude:
+            continue
+        if _same_order(o, direction, entry, sl, digits):
+            return o
+    return None
+
+
+# دستورهایی که به‌خاطر بسته بودن بازار نماد / نبود قیمت انجام نشدند و باید دوباره تلاش شوند.
+# با هر همگام‌سازی کامل (sync_all) از نو ساخته می‌شوند.
+_retry_cancel = {}   # ticket → {"base", "name", "o", "why", "nxt", "filters"}
+_retry_place = {}    # (base, zone_id) → {"base", "name", "p"}
+
+
+def _order_dict(o):
+    """مشخصات یک سفارش موجود به شکل خواسته‌ی استراتژی (برای چیدن دوباره با حجم تازه)."""
+    return {"zone_id": o.comment, "direction": "BUY" if o.type == mt5.ORDER_TYPE_BUY_LIMIT else "SELL",
+            "entry": float(o.price_open), "sl": float(o.sl), "tp": float(o.tp)}
+
+
 # ---------------- دیتا و بازپخش استراتژی ----------------
 def fetch_df(broker_name, timeframe, count):
     """فقط کندل‌های بسته‌شده (کندل در حال شکل‌گیری حذف می‌شود)."""
@@ -374,31 +549,56 @@ def calc_volume(broker_name, si, direction, entry, sl, risk_amt, equity):
     return vol, f"ریسک واقعی {real_loss:,.0f}$"
 
 
+def _queue_place(base, broker_name, p, why):
+    key = (base, str(p["zone_id"]))
+    first = key not in _retry_place
+    _retry_place[key] = {"base": base, "name": broker_name, "p": p}
+    if first:
+        log(f"⏳ زون {p['zone_id']}: سفارش فعلاً گذاشته نشد ({why}) — "
+            f"هر چند ثانیه دوباره تلاش می‌کنم تا بازار این نماد باز شود.", base)
+    return "retry"
+
+
 def place_pending(base, broker_name, p):
+    """سفارش لیمیت یک زون را می‌گذارد.
+    خروجی: "ok" (روی حساب هست) | "retry" (بعداً دوباره) | "skip" (دیگر معنا ندارد) | "fail" (رد شد)
+    نتیجه فقط از روی کد برگشتی قضاوت نمی‌شود: بعد از ارسال، فهرست سفارش‌های حساب دوباره خوانده
+    می‌شود (یک بار متاتریدر برای دستورهای موفق کد 0 برگرداند و ربات فکر کرد رد شده‌اند)."""
+    key = (base, str(p["zone_id"]))
     si = mt5.symbol_info(broker_name)
     tick = mt5.symbol_info_tick(broker_name)
     acc = mt5.account_info()
-    if si is None or tick is None or acc is None or tick.bid <= 0:
-        log(f"⚠️ زون {p['zone_id']}: قیمت/مشخصات نماد نیامد — سفارش گذاشته نشد (بازار بسته؟).", base)
-        return
+    if si is None or tick is None or acc is None or tick.bid <= 0 or not symbol_tradeable(broker_name):
+        return _queue_place(base, broker_name, p, "بازار این نماد بسته است یا قیمت نیامد")
 
     entry = round(p["entry"], si.digits)
     sl = round(p["sl"], si.digits)
     tp = round(p["tp"], si.digits)
 
+    # همین سفارش (همین جهت/ورود/استاپ) از قبل روی حساب هست؟ دومی نگذار.
+    ex = _find_order(broker_name, p["direction"], entry, sl, si.digits)
+    if ex is not None:
+        _retry_place.pop(key, None)
+        log(f"✔️ زون {p['zone_id']}: سفارشش از قبل روی حساب هست (تیکت {ex.ticket}) — سفارش دوم گذاشته نمی‌شود.",
+            base, bale=False)
+        return "ok"
+
     if p["direction"] == "BUY" and entry >= tick.ask:
+        _retry_place.pop(key, None)
         log(f"⏭️ زون {p['zone_id']}: قیمت الان ({tick.ask}) پایین‌تر از نقطه‌ی ورود خرید ({entry}) است — سفارش معنا ندارد.", base)
-        return
+        return "skip"
     if p["direction"] == "SELL" and entry <= tick.bid:
+        _retry_place.pop(key, None)
         log(f"⏭️ زون {p['zone_id']}: قیمت الان ({tick.bid}) بالاتر از نقطه‌ی ورود فروش ({entry}) است — سفارش معنا ندارد.", base)
-        return
+        return "skip"
 
     w, sess_name = current_session_weight()
     risk_amt = acc.equity * (1.0 - RESERVE) * RISK_PER_TRADE * w
     vol, vol_msg = calc_volume(broker_name, si, p["direction"], entry, sl, risk_amt, acc.equity)
     if vol is None:
+        _retry_place.pop(key, None)
         log(f"⚠️ زون {p['zone_id']}: سفارش گذاشته نشد — {vol_msg}", base)
-        return False
+        return "fail"
 
     req = {
         "action": mt5.TRADE_ACTION_PENDING,
@@ -412,25 +612,29 @@ def place_pending(base, broker_name, p):
         "type_filling": mt5.ORDER_FILLING_RETURN,
     }
     res = mt5.order_send(req)
+    rc = _rc(res)
     side = "خرید" if p["direction"] == "BUY" else "فروش"
-    if res is None:
-        log(f"❌ زون {p['zone_id']}: پاسخ ارسال سفارش نیامد: {mt5.last_error()}", base)
-        return False
-    if res.retcode == mt5.TRADE_RETCODE_DONE:
+    placed = _find_order(broker_name, p["direction"], entry, sl, si.digits)
+    if rc in RC_DONE or placed is not None:
+        _retry_place.pop(key, None)
+        ticket = placed.ticket if placed is not None else getattr(res, "order", "?")
+        note = "" if rc in RC_DONE else f" | (کد برگشتی متاتریدر {rc} بود ولی سفارش واقعاً ثبت شده)"
         log(f"🟢 سفارش {side} گذاشته شد | زون {p['zone_id']} | حجم {vol} لات ({vol_msg}) | "
-            f"سشن: {sess_name} × {w:g} | ورود {entry} | استاپ {sl} | تارگت {tp} | تیکت {res.order}", base)
-        return True
-    elif res.retcode == 10018:
-        log(f"🌙 بازار بسته است — سفارش زون {p['zone_id']} بعداً گذاشته می‌شود.", base)
-    else:
-        log(f"❌ سفارش زون {p['zone_id']} رد شد | کد {res.retcode} | {res.comment}", base)
-    return False
+            f"سشن: {sess_name} × {w:g} | ورود {entry} | استاپ {sl} | تارگت {tp} | تیکت {ticket}{note}", base)
+        return "ok"
+    if res is None or rc in RC_TRANSIENT:
+        return _queue_place(base, broker_name, p, _rc_txt(res))
+    _retry_place.pop(key, None)
+    log(f"❌ سفارش زون {p['zone_id']} رد شد | {_rc_txt(res)}", base)
+    return "fail"
 
 
 def _age_txt(ts):
-    """عمر سفارش را به زبان ساده می‌نویسد."""
+    """عمر سفارش را به زبان ساده می‌نویسد. زمان ثبت سفارش به وقت سرور است، پس با ساعت سرور
+    مقایسه می‌شود (قبلاً با ساعت ویندوز مقایسه می‌شد و عمر را ۳ ساعت کمتر نشان می‌داد)."""
     try:
-        sec = max(0, int(_time.time() - int(ts)))
+        now = server_now() or _time.time()
+        sec = max(0, int(now - int(ts)))
     except Exception:
         return "نامشخص"
     d, rem = divmod(sec, 86400)
@@ -443,18 +647,36 @@ def _age_txt(ts):
 
 def cancel_order(base, o, why="طبق قوانین استراتژی دیگر معتبر نیست",
                  next_action="دوباره چیده نمی‌شود (زون دیگر معتبر نیست)", filters="", broker_name=None):
-    """لغو سفارش با گزارش مهندسی کامل: مشخصات سفارش، دلیل دقیق، وضعیت بازار و اقدام بعدی."""
+    """لغو سفارش با گزارش مهندسی کامل: مشخصات سفارش، دلیل دقیق، وضعیت بازار و اقدام بعدی.
+    خروجی: "ok" (دیگر روی حساب نیست) | "retry" (بازار نماد بسته/قیمت نبود؛ بعداً دوباره) | "fail"
+    نتیجه با خواندن دوباره‌ی فهرست سفارش‌ها تأیید می‌شود، نه فقط با کد برگشتی."""
+    name = broker_name or o.symbol
     side = "خرید" if o.type in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP) else "فروش"
     price_now = ""
     try:
-        tk = mt5.symbol_info_tick(broker_name or o.symbol)
+        tk = mt5.symbol_info_tick(name)
         if tk is not None:
             price_now = f" | قیمت فعلی: {tk.bid}"
     except Exception:
         pass
 
     res = mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket})
-    if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+    rc = _rc(res)
+    alive = _order_alive(o.ticket)
+    if rc not in RC_DONE and alive is False:
+        try:
+            filled = bool(mt5.positions_get(ticket=o.ticket))
+        except Exception:
+            filled = False
+        if filled:
+            _retry_cancel.pop(o.ticket, None)
+            _gone_tickets.add(o.ticket)
+            log(f"⚠️ سفارش زون {o.comment} (تیکت {o.ticket}) قبل از لغو پر شد و حالا پوزیشن باز است "
+                f"(استاپ و تارگتش روی خودش است). دلیلی که می‌خواستیم لغو کنیم: {why}", base)
+            return "ok"
+    if rc in RC_DONE or alive is False:
+        _retry_cancel.pop(o.ticket, None)
+        _gone_tickets.add(o.ticket)
         lines = [
             f"🗑️ سفارش لغو شد | زون {o.comment} | {side} | تیکت {o.ticket}",
             f"    ├ مشخصات: ورود {o.price_open} | استاپ {o.sl} | تارگت {o.tp} | حجم {o.volume_current} لات",
@@ -463,11 +685,60 @@ def cancel_order(base, o, why="طبق قوانین استراتژی دیگر م�
         ]
         if filters:
             lines.append(f"    ├ وضعیت فیلترها: {filters}")
+        if rc not in RC_DONE:
+            lines.append(f"    ├ (کد برگشتی متاتریدر {rc} بود ولی سفارش واقعاً حذف شده)")
         lines.append(f"    └ اقدام بعدی: {next_action}")
         log("\n".join(lines), base)
-    else:
-        log(f"⚠️ لغو سفارش {o.ticket} (زون {o.comment}) موفق نبود | کد: "
-            f"{getattr(res, 'retcode', mt5.last_error())} | دلیلی که می‌خواستیم لغو کنیم: {why}", base)
+        return "ok"
+
+    if res is None or rc in RC_TRANSIENT or not symbol_tradeable(name):
+        first = o.ticket not in _retry_cancel
+        _retry_cancel[o.ticket] = {"base": base, "name": name, "o": o, "why": why,
+                                   "nxt": next_action, "filters": filters}
+        if first:
+            log(f"⏳ لغو سفارش {o.ticket} (زون {o.comment}) فعلاً ممکن نشد | {_rc_txt(res)} — "
+                f"بازار این نماد بسته است یا قیمت ندارد؛ هر چند ثانیه دوباره تلاش می‌کنم. "
+                f"(دلیل لغو: {why})", base)
+        return "retry"
+
+    _retry_cancel.pop(o.ticket, None)
+    log(f"⚠️ لغو سفارش {o.ticket} (زون {o.comment}) موفق نبود | {_rc_txt(res)} | "
+        f"دلیلی که می‌خواستیم لغو کنیم: {why}", base)
+    return "fail"
+
+
+def refresh_volumes(b, name, orders, filters=""):
+    """اگر وزن ریسک سشن عوض شده، سفارش‌های در انتظار با حجم متناسب سشن فعلی دوباره چیده می‌شوند
+    (بک‌تست وزن را بر اساس سشنِ لحظه‌ی ورود می‌گیرد). اول سفارش قدیمی لغو می‌شود، بعد جدید گذاشته
+    می‌شود؛ اگر لغو ممکن نشد، سفارش جدید هم صبر می‌کند تا دو سفارش برای یک زون روی حساب نباشد."""
+    if not (SESSION_REPLACE_ORDERS and USE_SESSION_WEIGHTS) or not orders:
+        return
+    if not symbol_tradeable(name):
+        return   # بازار این نماد بسته است؛ دور بعد (با باز شدن بازار) دوباره بررسی می‌شود
+    si_ = mt5.symbol_info(name)
+    acc_ = mt5.account_info()
+    if si_ is None or acc_ is None:
+        return
+    w_now, sess_now = current_session_weight()
+    risk_amt_ = acc_.equity * (1.0 - RESERVE) * RISK_PER_TRADE * w_now
+    for o in orders:
+        p = _order_dict(o)
+        target, _ = calc_volume(name, si_, p["direction"], p["entry"], p["sl"], risk_amt_, acc_.equity)
+        # توجه: در متاتریدر، «سفارش» فیلد volume_current دارد و «پوزیشن» فیلد volume
+        cur_vol = float(getattr(o, "volume_current", 0) or 0)
+        if target is None or cur_vol <= 0:
+            continue
+        if abs(target - cur_vol) / cur_vol <= SESSION_REPLACE_TOLERANCE:
+            continue
+        r = cancel_order(b, o,
+                         why=f"وزن ریسک سشن عوض شد → سشن فعلی: {sess_now} (ضریب {w_now:g}) | "
+                             f"حجم فعلی {o.volume_current} → حجم درست {target}",
+                         next_action="بلافاصله با حجم متناسب سشن جدید دوباره چیده می‌شود",
+                         filters=filters, broker_name=name)
+        if r == "ok":
+            place_pending(b, name, p)
+        elif r == "retry":
+            _queue_place(b, name, p, "منتظر لغو سفارش قبلیِ همین زون")
 
 
 _last_note = {}   # آخرین پیام وضعیت هر نماد — برای جلوگیری از تکرار
@@ -507,76 +778,112 @@ def sync_all(symbols, reason_txt="بازبینی"):
                 total += 1
 
     # ۳) همگام‌سازی هر نماد با سهمیه‌اش
+    # دستورهای مانده از دور قبل دیگر معتبر نیستند؛ همین همگام‌سازی همه را از نو حساب می‌کند
+    _retry_cancel.clear()
+    _retry_place.clear()
+    _gone_tickets.clear()
     my_positions = [p for p in (mt5.positions_get() or ()) if p.magic == MAGIC]
     for b, name in symbols.items():
         desired = alloc.get(b, {})
-        existing = {o.comment: o for o in (mt5.orders_get(symbol=name) or ()) if o.magic == MAGIC}
+        si_ = mt5.symbol_info(name)
+        digits = si_.digits if si_ is not None else 5
+        orders = _my_orders(name)
 
-        for cm, o in existing.items():
-            if cm not in desired:
-                # دلیل دقیق لغو: اول از موتور استراتژی، وگرنه سهمیه/سقف
-                zr = zone_reasons.get(b, {}).get(str(cm), "")
-                still_wanted = any(str(p["zone_id"]) == str(cm) for p in all_wanted.get(b, []))
-                if zr:
-                    why, nxt = zr, "دوباره چیده نمی‌شود (زون طبق قوانین استراتژی باطل شد)"
-                elif still_wanted:
-                    why = f"زون معتبر است ولی سهمیه‌ی اوردر پر شد (سقف {MAX_PENDING_TOTAL} اوردر در کل حساب)"
-                    nxt = "به‌محض آزاد شدن سهمیه، دوباره چیده می‌شود"
-                else:
-                    why = f"دیگر در فهرست زون‌های معتبر نیست — {notes.get(b, 'شرایط بازار عوض شد')}"
-                    nxt = "اگر شرایط دوباره سبز شود و زون معتبر بماند، دوباره بررسی می‌شود"
-                cancel_order(b, o, why=why, next_action=nxt,
+        # تطبیق سفارش‌های روی حساب با خواسته‌ها: اول با شناسه‌ی زون (کامنت سفارش)، بعد با
+        # جهت + قیمت ورود + استاپ (مثلاً سفارشی که با شناسه‌ی قدیمی گذاشته شده). هر سفارش فقط
+        # به یک زون می‌خورد؛ سفارش دوم با همان شناسه «تکراری» است و لغو می‌شود.
+        matched = {}
+        taken = set()
+        for zid in desired:
+            for o in orders:
+                if o.ticket not in taken and o.comment == zid:
+                    matched[zid] = o
+                    taken.add(o.ticket)
+                    break
+        for zid, p in desired.items():
+            if zid in matched:
+                continue
+            e_, s_ = round(p["entry"], digits), round(p["sl"], digits)
+            for o in orders:
+                if o.ticket not in taken and _same_order(o, p["direction"], e_, s_, digits):
+                    matched[zid] = o
+                    taken.add(o.ticket)
+                    break
+
+        for o in orders:
+            if o.ticket in taken:
+                continue
+            cm = o.comment
+            # دلیل دقیق لغو: اول از موتور استراتژی، وگرنه سهمیه/سقف
+            zr = zone_reasons.get(b, {}).get(str(cm), "")
+            still_wanted = any(str(p["zone_id"]) == str(cm) for p in all_wanted.get(b, []))
+            twin = any(k.ticket != o.ticket and k.type == o.type and abs(k.price_open - o.price_open) <= 0.6 * 10 ** (-int(digits))
+                       and abs(k.sl - o.sl) <= 0.6 * 10 ** (-int(digits)) for k in matched.values())
+            if cm in matched or twin:
+                why = "سفارش تکراری — برای همین زون سفارش دیگری روی حساب هست"
+                nxt = "فقط یک سفارش برای هر زون نگه داشته می‌شود"
+            elif zr:
+                why, nxt = zr, "دوباره چیده نمی‌شود (زون طبق قوانین استراتژی باطل شد)"
+            elif still_wanted:
+                why = f"زون معتبر است ولی سهمیه‌ی اوردر پر شد (سقف {MAX_PENDING_TOTAL} اوردر در کل حساب)"
+                nxt = "به‌محض آزاد شدن سهمیه، دوباره چیده می‌شود"
+            else:
+                why = f"دیگر در فهرست زون‌های معتبر نیست — {notes.get(b, 'شرایط بازار عوض شد')}"
+                nxt = "اگر شرایط دوباره سبز شود و زون معتبر بماند، دوباره بررسی می‌شود"
+            cancel_order(b, o, why=why, next_action=nxt,
+                         filters=filters_txt.get(b, ""), broker_name=name)
+
+        # سفارش زونی که سطح‌هایش عوض شده (مثلاً زون قدیمیِ هم‌پوشان از پنجره‌ی ۲۰۰۰ کندلی بیرون
+        # افتاد و محدوده‌ی این زون پهن‌تر شد) با سطح‌های جدید دوباره چیده می‌شود
+        tol = 0.6 * 10 ** (-int(digits))
+        for zid, o in list(matched.items()):
+            p = desired[zid]
+            e_, s_, t_ = round(p["entry"], digits), round(p["sl"], digits), round(p["tp"], digits)
+            if _same_order(o, p["direction"], e_, s_, digits) and abs(o.tp - t_) <= tol:
+                continue
+            r = cancel_order(b, o, why=f"سطح‌های زون عوض شد (ورود {o.price_open}→{e_} | "
+                                      f"استاپ {o.sl}→{s_} | تارگت {o.tp}→{t_})",
+                             next_action="بلافاصله با سطح‌های جدید دوباره چیده می‌شود",
                              filters=filters_txt.get(b, ""), broker_name=name)
+            if r in ("ok", "retry"):
+                matched.pop(zid)
 
         # اگر وزن سشن عوض شده باشد، سفارش موجود با حجم متناسبِ سشن جدید دوباره چیده می‌شود
-        if SESSION_REPLACE_ORDERS and USE_SESSION_WEIGHTS:
-            si_ = mt5.symbol_info(name)
-            acc_ = mt5.account_info()
-            w_now, sess_now = current_session_weight()
-            for cm, o in list(existing.items()):
-                p = desired.get(cm)
-                if p is None or si_ is None or acc_ is None:
-                    continue
-                risk_amt_ = acc_.equity * (1.0 - RESERVE) * RISK_PER_TRADE * w_now
-                target, _ = calc_volume(name, si_, p["direction"],
-                                        round(p["entry"], si_.digits), round(p["sl"], si_.digits),
-                                        risk_amt_, acc_.equity)
-                # توجه: در متاتریدر، «سفارش» فیلد volume_current دارد و «پوزیشن» فیلد volume
-                cur_vol = float(getattr(o, "volume_current", 0) or 0)
-                if target is None or cur_vol <= 0:
-                    continue
-                if abs(target - cur_vol) / cur_vol > SESSION_REPLACE_TOLERANCE:
-                    cancel_order(b, o,
-                                 why=f"وزن ریسک سشن عوض شد → سشن فعلی: {sess_now} (ضریب {w_now:g}) | "
-                                     f"حجم فعلی {o.volume_current} → حجم درست {target}",
-                                 next_action="بلافاصله با حجم متناسب سشن جدید دوباره چیده می‌شود",
-                                 filters=filters_txt.get(b, ""), broker_name=name)
-                    existing.pop(cm, None)
+        refresh_volumes(b, name, list(matched.values()), filters=filters_txt.get(b, ""))
 
+        # تا وقتی لغوِ سفارشی از همین نماد مانده (بازارش بسته بود)، سفارش تازه گذاشته نمی‌شود
+        # (وگرنه چند لحظه سفارش قدیمی و جدید با هم روی حساب می‌مانند)
+        blocked = any(it["name"] == name for it in _retry_cancel.values())
         placed_something = False
         for zid, p in desired.items():
-            if zid in existing:
+            if zid in matched:
                 continue
             if len(my_positions) >= MAX_OPEN_TOTAL:
                 log(f"⏸️ زون {zid}: سقف {MAX_OPEN_TOTAL} ترید باز حساب پر است — فعلاً سفارش جدید نمی‌گذارم.", b)
                 continue
-            if place_pending(b, name, p):
+            if blocked:
+                _queue_place(b, name, p, "اول باید سفارش قبلیِ این نماد لغو شود")
+                continue
+            if place_pending(b, name, p) == "ok":
                 placed_something = True
 
         # گزارش وضعیت هر چارت — فقط وقتی وضعیت نسبت به دفعه‌ی قبل عوض شده باشد
         note = notes.get(b, "")
         n_open_sym = len([p for p in my_positions if p.symbol == name])
-        if not all_wanted.get(b):
+        waiting = any(it["name"] == name for it in list(_retry_cancel.values()) + list(_retry_place.values()))
+        if waiting:
+            msg = "⏳ تغییرات این نماد منتظر باز شدن بازارش است (هر چند ثانیه دوباره تلاش می‌شود)"
+        elif not all_wanted.get(b):
             if note == "فیلترها سبزند":
                 why = "فیلترها سبزند ولی زون معتبرِ لمس‌نشده‌ای نزدیک قیمت نیست"
             else:
                 why = note
-            msg = f"⛔ معامله نمی‌کند | دلیل: {why} | اوردر فعال: {len(existing)} | ترید باز: {n_open_sym}"
+            msg = f"⛔ معامله نمی‌کند | دلیل: {why} | اوردر فعال: {len(matched)} | ترید باز: {n_open_sym}"
         elif not desired:
             msg = (f"⏸️ زون آماده دارد ولی سهمیه‌ی اوردر (سقف {MAX_PENDING_TOTAL} کل حساب) پر است | "
                    f"زون‌های واجد شرایط: {len(all_wanted.get(b, []))}")
         elif not placed_something:
-            msg = f"✔️ بدون تغییر | اوردر فعال: {len(existing)} | ترید باز: {n_open_sym} | وضعیت فیلترها: {note}"
+            msg = f"✔️ بدون تغییر | اوردر فعال: {len(matched)} | ترید باز: {n_open_sym} | وضعیت فیلترها: {note}"
         else:
             msg = None
 
@@ -588,6 +895,56 @@ def sync_all(symbols, reason_txt="بازبینی"):
                 console(f"{b} | (بدون تغییر) {msg}")   # فقط در CMD، نه در بله
 
     log(f"همگام‌سازی کامل شد ({reason_txt}) | اوردرهای تخصیص‌یافته: {total} از سقف {MAX_PENDING_TOTAL}")
+    # نگهبان (watchdog.py) از روی این فایل می‌فهمد همگام‌سازی‌ها به‌موقع انجام می‌شوند یا نه
+    try:
+        with open(os.path.join(LOG_DIR, "last_sync.txt"), "w", encoding="utf-8") as f:
+            f.write(dt.datetime.now().isoformat(timespec="seconds"))
+    except Exception:
+        pass
+
+
+def process_retries():
+    """دستورهای مانده (لغو/ثبت سفارش در نمادی که بازارش بسته بود) را دوباره امتحان می‌کند.
+    خروجی True یعنی هنوز دستوری مانده و حلقه‌ی اصلی باید زودتر برگردد."""
+    if not _retry_cancel and not _retry_place:
+        return False
+    for tk, it in list(_retry_cancel.items()):
+        alive = _order_alive(tk)
+        if alive is False:          # دیگر روی حساب نیست (دستور قبلی دیر اثر کرد یا سفارش پر شد)
+            _retry_cancel.pop(tk, None)
+            continue
+        if not symbol_tradeable(it["name"]):
+            continue
+        cancel_order(it["base"], it["o"], why=it["why"], next_action=it["nxt"],
+                     filters=it["filters"], broker_name=it["name"])
+    blocked = {it["name"] for it in _retry_cancel.values()}
+    n_open = len([p for p in (mt5.positions_get() or ()) if p.magic == MAGIC])
+    for key, it in list(_retry_place.items()):
+        if it["name"] in blocked or n_open >= MAX_OPEN_TOTAL or not symbol_tradeable(it["name"]):
+            continue
+        place_pending(it["base"], it["name"], it["p"])
+    return bool(_retry_cancel or _retry_place)
+
+
+_last_sess = [None]
+
+
+def maybe_session_refresh(symbols):
+    """وقتی سشن عوض می‌شود (نه سر هر کندل ۴ساعته)، حجم سفارش‌های در انتظار بازبینی می‌شود.
+    قبلاً این کار فقط موقع همگام‌سازی ۴ساعته انجام می‌شد: هم حجم تا ۳ ساعت با سشن واقعی ورود
+    نمی‌خواند، هم همه‌ی سفارش‌ها ساعت ۰۰ (رول‌اوور، بدون قیمت) لغو و دوباره چیده می‌شدند."""
+    if not (SESSION_REPLACE_ORDERS and USE_SESSION_WEIGHTS):
+        return
+    w, sess = current_session_weight()
+    if sess == _last_sess[0]:
+        return
+    first = _last_sess[0] is None
+    _last_sess[0] = sess
+    if first:
+        return
+    log(f"🕐 سشن عوض شد → {sess} (ضریب ریسک {w:g}) — حجم سفارش‌های در انتظار بازبینی می‌شود.", bale=False)
+    for b, name in symbols.items():
+        refresh_volumes(b, name, _my_orders(name))
 
 
 # ---------------- سلامت‌سنجی و اعلام وضعیت ----------------
@@ -601,8 +958,10 @@ _market_closed = [False]
 
 def market_is_open(symbols):
     """تشخیص باز/بسته بودن بازار از روی تازگی آخرین تیک قیمت.
-    اگر برای همه‌ی نمادها بیش از ۵ دقیقه تیک نیامده باشد، بازار تعطیل است."""
-    now = _time.time()
+    اگر برای همه‌ی نمادها بیش از ۵ دقیقه تیک نیامده باشد، بازار تعطیل است.
+    (زمان تیک به وقت سرور است؛ قبلاً با ساعت ویندوز مقایسه می‌شد و تا ~۳ ساعت بعد از بسته شدن
+    بازارِ جمعه، بازار را باز حساب می‌کرد.)"""
+    now = _time.time() + (_srv_offset[0] or 0)
     fresh = 0
     checked = 0
     for name in symbols.values():
@@ -862,8 +1221,45 @@ def _mark_managed(ticket):
         pass
 
 
+_init_vol = {}         # ticket → حجم اولیه‌ی پوزیشن (از معامله‌ی ورود در تاریخچه)
+_partial_fail_n = {}   # ticket → تعداد تلاش ناموفق (برای اینکه لاگ هر ۳۰ ثانیه تکرار نشود)
+
+
+def initial_volume(p):
+    """حجم اولیه‌ی پوزیشن از معامله‌ی ورودش (بعد از ری‌استارت هم درست است)."""
+    v = _init_vol.get(p.ticket)
+    if v:
+        return v
+    try:
+        deals = mt5.history_deals_get(position=p.ticket) or ()
+        ins = [d.volume for d in deals if d.entry == mt5.DEAL_ENTRY_IN]
+        if ins:
+            v = float(sum(ins))
+    except Exception:
+        v = None
+    if v:
+        _init_vol[p.ticket] = v
+    return v
+
+
+def _position_volume(ticket):
+    """حجم فعلی پوزیشن | 0 = بسته شده | None = معلوم نشد"""
+    try:
+        r = mt5.positions_get(ticket=ticket)
+    except Exception:
+        return None
+    if r is None:
+        return None
+    return float(r[0].volume) if len(r) else 0.0
+
+
 def manage_positions(symbols_rev):
-    """سیو سود: هر پوزیشنی که سودش به ۲ برابر ریسک رسید، نصف حجمش نقد می‌شود (یک بار)."""
+    """سیو سود: هر پوزیشنی که سودش به ۲ برابر ریسک رسید، نصف حجمش نقد می‌شود — فقط یک بار.
+
+    باگ قبلی: متاتریدر چند روز برای دستورهای انجام‌شده کد 0 برگرداند؛ ربات فکر کرد نصف کردن
+    انجام نشده و هر ۳۰ ثانیه دوباره نصف کرد (۳٫۶۶ لات → ... → ۰٫۰۱ لات). حالا:
+      ۱) اگر حجم پوزیشن از حجم ورودش کمتر است، یعنی قبلاً نصف شده → دیگر دست نمی‌زنیم.
+      ۲) نتیجه‌ی دستور با خواندن دوباره‌ی حجم پوزیشن تأیید می‌شود، نه فقط با کد برگشتی."""
     if not MANAGE_PARTIAL:
         return
     for p in (mt5.positions_get() or ()):
@@ -876,6 +1272,16 @@ def manage_positions(symbols_rev):
         si = mt5.symbol_info(p.symbol)
         if tick is None or si is None:
             continue
+        base = symbols_rev.get(p.symbol, p.symbol)
+        step = si.volume_step or 0.01
+
+        # قفل «فقط یک بار»: حجم فعلی کمتر از حجم ورود = قبلاً بخشی بسته شده
+        init_v = initial_volume(p)
+        if init_v and p.volume < init_v - step / 2:
+            _mark_managed(p.ticket)
+            log(f"ℹ️ سیو سود {p.comment}: حجم این پوزیشن قبلاً کم شده ({init_v:g} → {p.volume:g} لات) — "
+                f"دوباره نصف نمی‌شود.", base, bale=False)
+            continue
 
         if p.type == mt5.POSITION_TYPE_BUY:
             reached = tick.bid >= p.price_open + MANAGE_TRIGGER_R * risk_dist
@@ -886,15 +1292,12 @@ def manage_positions(symbols_rev):
         if not reached:
             continue
 
-        step = si.volume_step or 0.01
         half = math.floor(p.volume * PARTIAL_FRAC / step) * step
         if half < si.volume_min or (p.volume - half) < si.volume_min:
             _mark_managed(p.ticket)
-            log(f"⚠️ سیو سود {p.comment}: حجم برای نصف کردن کافی نیست ({p.volume}) — کامل می‌ماند.",
-                symbols_rev.get(p.symbol, p.symbol))
+            log(f"⚠️ سیو سود {p.comment}: حجم برای نصف کردن کافی نیست ({p.volume}) — کامل می‌ماند.", base)
             continue
 
-        base = symbols_rev.get(p.symbol, p.symbol)
         req = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": p.symbol,
@@ -920,13 +1323,24 @@ def manage_positions(symbols_rev):
                 break
             if res is not None and res.retcode != 10030:  # فقط خطای «حالت پرکردن» ارزش تلاش دوباره دارد
                 break
+            if _position_volume(p.ticket) not in (None, p.volume):
+                break                                    # انجام شده (هر کدی که برگشته باشد)
 
-        if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+        rc = _rc(res)
+        vol_now = _position_volume(p.ticket)
+        done = rc in RC_DONE or (vol_now is not None and vol_now < p.volume - step / 2)
+        if done:
             _mark_managed(p.ticket)
+            _partial_fail_n.pop(p.ticket, None)
+            note = "" if rc in RC_DONE else f" (کد برگشتی متاتریدر {rc} بود ولی حجم پوزیشن واقعاً کم شده)"
             log(f"💰 سیو سود انجام شد! زون {p.comment} | سود به ۲ برابر ریسک رسید — "
-                f"{round(half, 2)} لات از {p.volume} لات نقد شد؛ بقیه به سمت تارگت ادامه می‌دهد.", base)
+                f"{round(half, 2)} لات از {p.volume} لات نقد شد؛ بقیه به سمت تارگت ادامه می‌دهد.{note}", base)
         else:
-            log(f"⚠️ سیو سود {p.comment} انجام نشد | کد {getattr(res, 'retcode', mt5.last_error())} — دور بعد دوباره تلاش می‌شود.", base)
+            n = _partial_fail_n.get(p.ticket, 0) + 1
+            _partial_fail_n[p.ticket] = n
+            if n == 1 or n % 20 == 0:
+                log(f"⚠️ سیو سود {p.comment} انجام نشد | {_rc_txt(res)} — دور بعد دوباره تلاش می‌شود "
+                    f"(تلاش {n}).", base)
 
 
 # ---------------- رصد پر شدن و بسته شدن معاملات ----------------
@@ -977,9 +1391,63 @@ def track_positions(symbols_rev):
     _prev_positions = cur
 
 
+# ---------------- فقط یک ربات هم‌زمان + فایل‌های نگهبان ----------------
+PID_FILE = os.path.join(LOG_DIR, "robot.pid")
+STOP_FLAG = os.path.join(LOG_DIR, "robot_stopped.flag")   # = عمداً خاموش شده؛ نگهبان روشنش نکند
+_mutex = []
+
+
+def single_instance():
+    """دو ربات هم‌زمان روی یک حساب، سفارش‌های هم را لغو و تکرار می‌کنند. با یک Mutex ویندوزی
+    جلوی اجرای نسخه‌ی دوم گرفته می‌شود."""
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateMutexW.restype = wintypes.HANDLE
+        k32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
+        for scope in ("Global", "Local"):
+            h = k32.CreateMutexW(None, False, f"{scope}\\ZoneRobot_{MAGIC}")
+            if h:
+                if ctypes.get_last_error() == 183:      # ERROR_ALREADY_EXISTS
+                    return False
+                _mutex.append(h)                   # تا آخر اجرا باز بماند
+                return True
+    except Exception:
+        pass
+    return True
+
+
+def _write_pid():
+    try:
+        with open(PID_FILE, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
+    try:
+        if os.path.exists(STOP_FLAG):
+            os.remove(STOP_FLAG)
+    except Exception:
+        pass
+
+
+def _mark_stopped():
+    try:
+        with open(STOP_FLAG, "w", encoding="utf-8") as f:
+            f.write(dt.datetime.now().isoformat(timespec="seconds"))
+    except Exception:
+        pass
+
+
 # ---------------- حلقه‌ی اصلی ----------------
 def main():
-    log("========== شروع ربات (نسخه ۲ — دمو) ==========", bale=False)
+    if not single_instance():
+        print("⛔ یک ربات دیگر همین الان در حال اجراست — این یکی بالا نمی‌آید (دو ربات روی یک حساب = سفارش تکراری).")
+        return EXIT_NO_RESTART
+    _write_pid()
+    log("========== شروع ربات (نسخه ۳ — دمو) ==========", bale=False)
     log(f"سبد انتخابی ({len(BASKET)} نماد): {', '.join(BASKET)} — ربات فقط روی همین‌ها کار می‌کند.", bale=False)
 
     # سبد ربات و سبد بک‌تست باید یکی باشند، وگرنه ربات چیزی معامله می‌کند که
@@ -998,7 +1466,7 @@ def main():
             log("   نمادها یکی‌اند ولی ترتیبشان فرق دارد — ترتیب روی سهمیه‌بندی اثر دارد.", bale=True)
         log("   BASKET در live_trader.py و LIVE_BASKET_ORDER در run_backtest.py را یکی کن.", bale=True)
         bale_flush()
-        return
+        return EXIT_NO_RESTART
     acc = connect_with_retry(bale_notify=False)
 
     symbols = {}
@@ -1011,6 +1479,8 @@ def main():
             if name != b:
                 log(f"اسم نماد نزد بروکر: {name}", b, bale=False)
     symbols_rev = {v: k for k, v in symbols.items()}
+    _symbols_live.clear()
+    _symbols_live.update(symbols)
     log(f"آماده | {len(symbols)} نماد فعال | ریسک هر معامله {RISK_PER_TRADE*100:.1f}٪ | "
         f"حد سود {RR:g} برابر ریسک | ورود {abs(ENTRY_OFF)*100:.0f}٪ داخل زون | سقف {MAX_OPEN_TOTAL} پوزیشن", bale=False)
 
@@ -1078,6 +1548,7 @@ def main():
                 log("🟢 مشکل برطرف شد — همه‌چیز دوباره سالم است و ربات ادامه می‌دهد.")
 
             # بازار تعطیل؟ فقط یک بار اعلام کن و منتظر بمان
+            learn_server_offset()
             if not market_is_open(symbols):
                 if not _market_closed[0]:
                     _market_closed[0] = True
@@ -1113,6 +1584,10 @@ def main():
                 log(f"کندل ۴ ساعته‌ی جدید بسته شد ({', '.join(new_candle)}) — بررسی دوباره‌ی همه‌ی زون‌ها و فیلترها...")
                 sync_all(symbols, "کندل جدید")
 
+            maybe_session_refresh(symbols)
+            # دستورهایی که به‌خاطر بسته بودن بازار نماد مانده‌اند (مثلاً طلا ساعت ۰۰ تا ۰۱)
+            retry_pending = process_retries()
+
             manage_positions(symbols_rev)
             track_positions(symbols_rev)
             maybe_daily_report(symbols_rev)
@@ -1120,11 +1595,13 @@ def main():
             report_status()
             bale_flush()  # پیام‌های مانده در صف بله، هر دور دوباره تلاش می‌شوند
             heartbeat("سالم")
-            _time.sleep(POLL_SECONDS)
+            _time.sleep(RETRY_POLL_SECONDS if retry_pending else POLL_SECONDS)
 
         except KeyboardInterrupt:
+            _mark_stopped()
             log("⏹️ توقف دستی (Ctrl+C). سفارش‌ها و پوزیشن‌ها داخل متاتریدر دست‌نخورده می‌مانند "
-                "(استاپ و تارگت روی خود سفارش‌هاست و سرور بروکر اجرایشان می‌کند).")
+                "(استاپ و تارگت روی خود سفارش‌هاست و سرور بروکر اجرایشان می‌کند). نگهبان هم ربات را "
+                "دوباره روشن نمی‌کند تا خودت دوباره اجرایش کنی.")
             break
         except Exception as e:
             log(f"❌ خطای غیرمنتظره: {e} — ربات خاموش نمی‌شود و ادامه می‌دهد.")
@@ -1132,7 +1609,8 @@ def main():
             _time.sleep(POLL_SECONDS)
 
     mt5.shutdown()
+    return EXIT_NO_RESTART
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)
