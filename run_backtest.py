@@ -16,12 +16,47 @@ import pandas as pd
 #           فایل‌های لازم در ZIP:  -15.csv   -60.csv  -240.csv
 # برای ترتیب اتفاقات داخل کندل، ریزترین فایلِ ریزتر از تایم زون (مثلاً -5 یا -1) خودکار خوانده می‌شود.
 # (ربات لایو همیشه روی H4 کار می‌کند و این تنظیم رویش اثری ندارد.)
-STRATEGY_TF = "M15"
+STRATEGY_TF = "H4"
 TF_SETS = {
     #        (فایل زون، فایل روند، فایل زون بزرگ)
     "H4":  ("240", "1D", "1W"),
     "M15": ("15", "60", "240"),
 }
+
+# ============================================================================
+# قوانین استراتژی — از روی روش دستی خودت (عکس‌های بکتست دستی)
+# ============================================================================
+# نقطه‌ی ورود: ۱۰٪ ارتفاع بیس «بیرون» از پراکسیمال‌لاین (نزدیک‌تر به قیمت) — DEFAULT_ENTRY_OFF پایین‌تر
+# حد ضرر: ۲۵٪ ارتفاع بیس پشت دیستال‌لاین — DEFAULT_SL_OFF | حد سود: ۳ برابر ریسک — DEFAULT_RR
+#
+# روند (تایم زون و تایم روند) از روی ساختار بازار — سقف/کف‌های اصلی، نه ریز:
+#   "choch"    → روند فقط با «چاک» عوض می‌شود (شکست کف/سقف محافظ‌شده با کلوز کندل)
+#   "choch_tl" → روند وقتی عوض می‌شود که «هم چاک بخورد هم ترندلاین با بدنه‌ی کندل بشکند».
+#                اگر فقط ترندلاین بشکند، بازار «فاز فشردگی» است و هر دو جهت مجازند.
+#   "legacy"   → روش قدیمی ربات (سقف/کف‌های ۳ کندلی ریز) — فقط برای مقایسه
+# (در آزمایش‌های آخر فایل هر دو حالت choch و choch_tl جدا اجرا می‌شوند.)
+TREND_MODE = "choch"
+STRUCT_SWING_N = 3          # سقف/کف ساختار: کندلی که از ۳ کندل قبل و ۳ کندل بعدش بالاتر/پایین‌تر است
+TL_SWING_N = 2              # کف‌ها/سقف‌هایی که ترندلاین از رویشان کشیده می‌شود (حالت choch_tl)
+TRADE_WITH_TREND_ONLY = True  # فقط هم‌جهت روند: روند صعودی → فقط دیمند | نزولی → فقط سوپلای
+#                               (قبلاً ربات جهت زون را با روند چک نمی‌کرد)
+
+# کنسالیدیشن اوی (قدرت خروج از بیس): تا چند کندل بعد از بیس، باید یک کندل «کامل» بیرون از بیس
+# تشکیل شود — حتی سایه‌اش به پراکسیمال‌لاین نخورد. زون از بسته شدن همان کندل معتبر می‌شود.
+# ۰ = خاموش
+LEGOUT_CLEAR_BARS = 3
+
+# فیلتر تایم بالا: قیمت داخل دیمند روزانه/هفتگی → سل ممنوع | داخل سوپلای روزانه/هفتگی → بای ممنوع
+HTF_ZONE_FILTER = True
+
+# فیبوی آخرین سوئینگ هفتگی (۰ = کف، ۱ = سقف): بای فقط زیر ۰.۸ | سل فقط بالای ۰.۱۵
+FIB_FILTER = True
+FIB_BUY_MAX = 0.80
+FIB_SELL_MIN = 0.15
+FIB_SWING_N = 2             # سقف/کف هفتگی: کندلی که از ۲ هفته‌ی قبل و بعدش بالاتر/پایین‌تر است
+
+# بعد از ۳ سی‌پی (بیس هم‌جهت) پشت‌سرهم، دیگر در آن جهت معامله نمی‌شود (۰ = خاموش)
+MAX_CONSECUTIVE_CP = 3
 
 # ============================================================================
 # واقع‌بینی بک‌تست (اصلاح خوش‌بینی‌ها — بعد از مقایسه با ۶ هفته لایو)
@@ -79,11 +114,13 @@ SWAP_SPREAD_MULT_PER_NIGHT = 0.2   # سواپ ≈ ۲۰٪ اسپرد به ازا�
 
 # مقایسه‌ی حالت‌های نقطه‌ی ورود در یک اجرا (شیت «مقایسه_نقطه_ورود» در خلاصه_نتایج.xlsx)
 # اگر نمی‌خواهی و اجرا سریع‌تر شود، این را False کن.
-COMPARE_ENTRY_MODES = False  # مقایسه‌ی نقطه‌ی ورود تمام شد؛ حالت نهایی: -50% وسط زون
+COMPARE_ENTRY_MODES = False
 ENTRY_MODES = {
-    "-50% وسط زون": -0.50,
+    "+10% بیرون از پراکسیمال": 0.10,
 }
-DEFAULT_ENTRY_OFF = -0.50  # حالت اصلی که گزارش‌های کامل با آن ساخته می‌شود
+# نقطه‌ی ورود = پراکسیمال + ۱۰٪ ارتفاع بیس به سمت قیمت (قانون اصلی استراتژی).
+# مثبت = بیرون از زون به سمت قیمت | منفی = داخل زون (قبلاً -0.50 یعنی وسط زون بود)
+DEFAULT_ENTRY_OFF = 0.10
 
 # مقایسه‌ی نسبت سود به ضرر (RR) — تمام شد؛ RR نهایی: 3
 COMPARE_RR_MODES = False
@@ -193,19 +230,10 @@ LEAVE_ONE_OUT_TEST = False
 DESIGN_TESTS = True
 DESIGN_VARIANTS = {
     # نام سربرگ: (تنظیمات، توضیح)
-    "خروج_قوی": ({"min_departure_atr": 1.0},
-                 "فقط زونی که کندل خروجش قوی است: بدنه‌ی کندل تأیید ≥ ۱ برابر ATR"),
-    "جای_تا_زون_مخالف": ({"min_room_r": 3.0},
-                         "فاصله‌ی ورود تا نزدیک‌ترین زون مخالف (تایم زون یا تایم زون بزرگ) ≥ ۳ برابر ریسک"),
-    "حداقل_اندازه_زون": ({"min_risk_spread": 8.0},
-                         "فاصله‌ی ورود تا استاپ ≥ ۸ برابر اسپرد نماد (زون‌های ریز حذف)"),
-    "محل_زون_تایم_بالا": ({"htf_location": True},
-                          "فقط زونی که روی یک زون هم‌جهت در تایم روند یا تایم زون بزرگ قرار دارد"),
-    "ورود_لبه_زون": ({"entry_off": 0.0},
-                     "ورود روی لبه‌ی نزدیک زون (پراکسیمال) به‌جای وسط زون"),
-    "همه_با_هم": ({"min_departure_atr": 1.0, "min_room_r": 3.0, "min_risk_spread": 8.0,
-                   "htf_location": True, "entry_off": 0.0},
-                  "همه‌ی تغییرهای بالا با هم"),
+    # اجرای اصلی (سربرگ «خلاصه») = TREND_MODE بالای فایل: روند فقط با چاک
+    "روند_با_چاک_و_ترندلاین": ({"trend_mode": "choch_tl"},
+                               "روند فقط وقتی عوض می‌شود که هم چاک بخورد هم ترندلاین با بدنه‌ی کندل بشکند؛ "
+                               "اگر فقط ترندلاین بشکند فاز فشردگی است و هر دو جهت مجاز"),
 }
 
 # سربرگ‌های اضافه‌ی خروجی (پایداری نماد، پرتفوی، تنظیمات و ...). False = فقط «خلاصه»
@@ -565,6 +593,180 @@ def trend_from_swings(df: pd.DataFrame, n=1):
         out[i] = cur
 
     return pd.Series(out, index=df.index)
+# ---------------- روند از روی ساختار بازار (چاک / ترندلاین) ----------------
+_ALLOWED_DIRS = {1: ("BUY",), -1: ("SELL",), 2: ("BUY", "SELL"), -2: ("BUY", "SELL")}
+TREND_TXT = {1: "صعودی", -1: "نزولی", 0: "بدون روند",
+             2: "صعودی ولی ترندلاینش شکسته (فاز فشردگی)",
+             -2: "نزولی ولی ترندلاینش شکسته (فاز فشردگی)"}
+
+
+def dirs_allowed(dtr, htr):
+    """جهت‌های مجاز معامله از روی روند تایم روند (dtr) و تایم زون (htr)."""
+    if not TRADE_WITH_TREND_ONLY:
+        # رفتار قدیمی: فقط هم‌جهتی دو روند لازم بود و جهت خود زون چک نمی‌شد
+        return ("BUY", "SELL") if (dtr != 0 and dtr == htr) else ()
+    a = _ALLOWED_DIRS.get(int(dtr), ())
+    b = _ALLOWED_DIRS.get(int(htr), ())
+    return tuple(x for x in a if x in b)
+
+
+def structure_trend(df, n=3, use_trendline=False, tl_n=2):
+    """روند از روی ساختار بازار، بدون نگاه به آینده (سقف/کف بعد از n کندل تأیید می‌شود).
+
+    - BOS صعودی: کلوز بالای آخرین سقف شکسته‌نشده → روند صعودی می‌ماند/می‌شود و
+      «کف محافظ‌شده» = پایین‌ترین کف از آن سقف تا الان (همان کفی که این BOS را ساخت).
+    - چاک نزولی: کلوز زیر کف محافظ‌شده → روند نزولی. (برعکسش برای روند نزولی)
+      کف/سقف‌های ریزِ داخل اصلاح، روند را عوض نمی‌کنند؛ فقط کف/سقف محافظ‌شده.
+    - use_trendline: ترندلاین از کفِ شروع روند و کف‌های بالارونده‌ی بعدی کشیده می‌شود (در روند
+      نزولی از سقف‌ها)؛ همیشه از «آخرین کف» و کفِ پایین‌ترِ قبلی، تا خط بالارونده بماند.
+      کلوز کندل آن طرف خط = شکست ترندلاین → «فاز فشردگی» (خروجی 2 یا -2: هر دو جهت مجاز).
+      روند فقط وقتی عوض می‌شود که هم چاک بخورد هم ترندلاین شکسته باشد (اگر ترندلاین معتبری
+      نباشد، چاک به‌تنهایی کافی است).
+
+    خروجی برای هر کندل: 1 صعودی، -1 نزولی، 0 نامشخص، 2/-2 فاز فشردگی."""
+    hi = df["high"].to_numpy(dtype=float)
+    lo = df["low"].to_numpy(dtype=float)
+    cl = df["close"].to_numpy(dtype=float)
+    N = len(df)
+    out = np.zeros(N, dtype=int)
+    if N == 0:
+        return pd.Series(out, index=df.index)
+    sh, sl = swing_points(df, n=n)
+    if use_trendline:
+        tsh, tsl = (sh, sl) if tl_n == n else swing_points(df, n=tl_n)
+
+    st = {"trend": 0, "prot": np.nan, "prot_i": -1, "last_sh": -1, "sh_live": False,
+          "last_sl": -1, "sl_live": False, "anchors": [], "line": None, "tl_broken": False,
+          "pending": False}
+
+    def make_line():
+        """آخرین نقطه + نزدیک‌ترین نقطه‌ی قبلی که خط را در جهت روند نگه دارد."""
+        a = st["anchors"]
+        if len(a) < 2:
+            return None
+        i2, p2 = a[-1]
+        for i1, p1 in reversed(a[:-1]):
+            if (st["trend"] > 0 and p1 < p2) or (st["trend"] < 0 and p1 > p2):
+                return (i1, p1, i2, p2)
+        return None
+
+    def line_val(j):
+        i1, p1, i2, p2 = st["line"]
+        return p1 + (p2 - p1) * (j - i1) / (i2 - i1)
+
+    def beyond(j):
+        return (cl[j] < line_val(j)) if st["trend"] > 0 else (cl[j] > line_val(j))
+
+    def start_trend(new_trend, i):
+        old = st["trend"]
+        if new_trend > 0:
+            s0 = st["prot_i"] if (old < 0 and st["prot_i"] >= 0) else max(st["last_sh"], 0)
+            k = s0 + int(np.argmin(lo[s0:i + 1]))
+            st["prot"], st["prot_i"] = lo[k], k
+            if st["last_sh"] >= 0 and cl[i] > hi[st["last_sh"]]:
+                st["sh_live"] = False
+        else:
+            s0 = st["prot_i"] if (old > 0 and st["prot_i"] >= 0) else max(st["last_sl"], 0)
+            k = s0 + int(np.argmax(hi[s0:i + 1]))
+            st["prot"], st["prot_i"] = hi[k], k
+            if st["last_sl"] >= 0 and cl[i] < lo[st["last_sl"]]:
+                st["sl_live"] = False
+        st["trend"] = new_trend
+        st["anchors"] = [(st["prot_i"], st["prot"])]      # ترندلاین از نقطه‌ی شروع روند
+        st["line"] = None
+        st["tl_broken"] = False
+        st["pending"] = False
+
+    for i in range(N):
+        k = i - n
+        if k >= 0:
+            if sh[k]:
+                st["last_sh"], st["sh_live"] = k, True
+            if sl[k]:
+                st["last_sl"], st["sl_live"] = k, True
+        trend = st["trend"]
+        if use_trendline and trend != 0:
+            kt = i - tl_n
+            if kt > st["prot_i"]:
+                pt = None
+                if trend > 0 and tsl[kt]:
+                    pt = (kt, lo[kt])
+                elif trend < 0 and tsh[kt]:
+                    pt = (kt, hi[kt])
+                if pt is not None:
+                    st["anchors"] = (st["anchors"] + [pt])[-12:]
+                    ln = make_line()
+                    if ln is not None:
+                        st["line"] = ln
+                        st["tl_broken"] = any(beyond(j) for j in range(ln[2] + 1, i + 1))
+            if st["line"] is not None and not st["tl_broken"] and beyond(i):
+                st["tl_broken"] = True
+        c = cl[i]
+        if trend == 0:
+            if st["sh_live"] and c > hi[st["last_sh"]]:
+                st["sh_live"] = False
+                start_trend(1, i)
+            elif st["sl_live"] and c < lo[st["last_sl"]]:
+                st["sl_live"] = False
+                start_trend(-1, i)
+        elif trend > 0:
+            if st["sh_live"] and c > hi[st["last_sh"]]:            # BOS صعودی
+                st["sh_live"] = False
+                k2 = st["last_sh"] + int(np.argmin(lo[st["last_sh"]:i + 1]))
+                st["prot"], st["prot_i"] = lo[k2], k2
+                st["pending"] = False
+                if st["tl_broken"]:          # روند دوباره تأیید شد → ترندلاین از نو کشیده می‌شود
+                    st["line"], st["tl_broken"] = None, False
+            elif c < st["prot"] or st["pending"]:                   # چاک نزولی
+                if (not use_trendline) or st["line"] is None or st["tl_broken"]:
+                    start_trend(-1, i)
+                else:
+                    st["pending"] = True
+        else:
+            if st["sl_live"] and c < lo[st["last_sl"]]:            # BOS نزولی
+                st["sl_live"] = False
+                k2 = st["last_sl"] + int(np.argmax(hi[st["last_sl"]:i + 1]))
+                st["prot"], st["prot_i"] = hi[k2], k2
+                st["pending"] = False
+                if st["tl_broken"]:
+                    st["line"], st["tl_broken"] = None, False
+            elif c > st["prot"] or st["pending"]:                   # چاک صعودی
+                if (not use_trendline) or st["line"] is None or st["tl_broken"]:
+                    start_trend(1, i)
+                else:
+                    st["pending"] = True
+        t_now = st["trend"]
+        if t_now != 0 and use_trendline and st["line"] is not None and st["tl_broken"]:
+            out[i] = 2 * t_now
+        else:
+            out[i] = t_now
+    return pd.Series(out, index=df.index)
+
+
+def weekly_fib_range(w1, n=2):
+    """برای هر کندل هفتگی (بسته‌شده): محدوده‌ی آخرین سوئینگ — از قدیمی‌ترینِ «آخرین سقف» و
+    «آخرین کف» تأییدشده تا همین هفته، بالاترین سقف و پایین‌ترین کف. (بدون نگاه به آینده)"""
+    hi = w1["high"].to_numpy(dtype=float)
+    lo = w1["low"].to_numpy(dtype=float)
+    N = len(w1)
+    sh, sl = swing_points(w1, n=n)
+    r_lo = np.full(N, np.nan)
+    r_hi = np.full(N, np.nan)
+    last_h = last_l = -1
+    for i in range(N):
+        k = i - n
+        if k >= 0:
+            if sh[k]:
+                last_h = k
+            if sl[k]:
+                last_l = k
+        if last_h >= 0 and last_l >= 0:
+            st = min(last_h, last_l)
+            r_hi[i] = hi[st:i + 1].max()
+            r_lo[i] = lo[st:i + 1].min()
+    return r_lo, r_hi
+
+
 # ---------------- Base/Doji rules ----------------
 def is_base_candle(row):
     rng = row["high"] - row["low"]
@@ -609,7 +811,7 @@ class Zone:
     def low(self): return min(self.proximal, self.distal)
     def high(self): return max(self.proximal, self.distal)
 
-def build_zones(df, symbol, tf, max_base_len, atr_s):
+def build_zones(df, symbol, tf, max_base_len, atr_s, legout_clear=None):
     # ستون‌ها یک بار به آرایه‌ی numpy تبدیل می‌شوند. قوانین عوض نشده‌اند؛ فقط
     # به‌جای خواندن سطربه‌سطر از pandas (که در حلقه‌ی تودرتو بسیار کند است)
     # همان شرط‌ها روی آرایه محاسبه می‌شوند.
@@ -672,8 +874,21 @@ def build_zones(df, symbol, tf, max_base_len, atr_s):
                     proximal=float(body_min[i:i+L].min())
                     distal=float(base_high)
 
+            # کنسالیدیشن اوی: تا legout_clear کندل (از کندل خروج)، یک کندل باید کامل بیرون از بیس
+            # تشکیل شود — حتی سایه‌اش به پراکسیمال نخورد. زون از بسته شدن همان کندل معتبر است.
+            lc = LEGOUT_CLEAR_BARS if legout_clear is None else legout_clear
+            born = j
+            if lc:
+                born = None
+                for k2 in range(j, min(j + lc, n)):
+                    if (direction == "BUY" and l[k2] > proximal) or (direction == "SELL" and h[k2] < proximal):
+                        born = k2
+                        break
+                if born is None:
+                    break                 # این بیس معتبر نیست
+
             z=Zone(symbol, tf, direction, proximal, distal,
-                   times[j], times[i], times[j-1], doji_shadow)
+                   times[born], times[i], times[j-1], doji_shadow)
 
             # --- معیارهای کیفیت زون (به سبک Odds Enhancers) ---
             height = z.high() - z.low()
@@ -858,7 +1073,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                    invalidate_on_breach=False, min_profit_margin_r=0.0, min_departure_atr=0.0,
                    retry_rejected_zones=False, return_state=False,
                    book=None, alloc_mode=False, arm_untouched_zones=False,
-                   min_risk_spread=0.0, min_room_r=0.0, htf_location=False):
+                   min_risk_spread=0.0, min_room_r=0.0, htf_location=False, trend_mode=None):
     """موتور استراتژی برای یک نماد — به‌صورت generator.
 
     در هر کندل، درست سر جایی که ربات لایو تصمیم می‌گیرد کدام سفارش‌ها روی حساب
@@ -920,8 +1135,16 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
     # range/trend روی دیتای کات‌شده
     h4["range"] = range_filter(h4, h4["atr"])
     d1["range"] = range_filter(d1, d1["atr"])
-    h4["trend"] = trend_from_swings(h4, n=1)  # همین حالا بدون lookahead شده چون trend_from_swings را عوض کردی
-    d1["trend"] = trend_from_swings(d1, n=1)
+    # روند: «legacy» = روش قدیمی ربات (سقف/کف‌های ۳ کندلی ریز) | «choch» = ساختار بازار با چاک |
+    # «choch_tl» = چاک + ترندلاین (فاز فشردگی وقتی فقط ترندلاین شکسته)
+    tmode = trend_mode or TREND_MODE
+    if tmode == "legacy":
+        h4["trend"] = trend_from_swings(h4, n=1)
+        d1["trend"] = trend_from_swings(d1, n=1)
+    else:
+        use_tl = (tmode == "choch_tl")
+        h4["trend"] = structure_trend(h4, n=STRUCT_SWING_N, use_trendline=use_tl, tl_n=TL_SWING_N)
+        d1["trend"] = structure_trend(d1, n=STRUCT_SWING_N, use_trendline=use_tl, tl_n=TL_SWING_N)
 
     # طول کندل هر تایم‌فریم از خود دیتا (میانه‌ی فاصله‌ی کندل‌ها) — برای دسته‌ی H4 همان
     # ۴ ساعت، ۱ روز و ۷ روز است؛ برای دسته‌ی M15 می‌شود ۱۵ دقیقه، ۱ ساعت و ۴ ساعت.
@@ -980,8 +1203,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
     # محل زون روی تایم بالاتر: برای هر زون H4، زون‌های روزانه/هفتگیِ هم‌جهتی که با آن هم‌پوشانی دارند
     htf_overlaps = {}
+    d_z = dedup_zones_pit(build_zones(d1, symbol, "TREND", 6, d1["atr"])) \
+        if (htf_location or HTF_ZONE_FILTER) else []
     if htf_location:
-        d_z = dedup_zones_pit(build_zones(d1, symbol, "TREND", 6, d1["atr"]))
         htf_all = [(hz, trend_span) for hz in d_z] + [(hz, big_span) for hz in w_z]
         for z in h_z:
             htf_overlaps[id(z)] = [(hz, lag) for hz, lag in htf_all
@@ -1021,10 +1245,96 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 dem_high = v if dem_high is None else max(dem_high, v)
         return sup_low, dem_high
 
-    def design_block(z, levels, t_now):
-        """فیلترهای جدید طراحی؛ خروجی None = قبول، وگرنه کلید دلیل رد."""
+    # ---------- قوانین استراتژی (روش دستی) ----------
+    # ۱) فیلتر تایم بالا: زون‌های روزانه و هفتگیِ معتبر (کندل تأییدشان بسته شده، جایگزین نشده و
+    #    هنوز با کلوز کندلِ همان تایم از دیستال‌لاینشان رد نشده‌اند)
+    def _htf_arrays(zs, lag, tf_df):
+        n_ = len(zs)
+        f_ = np.empty(n_, dtype="datetime64[ns]")
+        u_ = np.empty(n_, dtype="datetime64[ns]")
+        tt = tf_df["time"].to_numpy(dtype="datetime64[ns]")
+        cc = tf_df["close"].to_numpy(dtype=float)
+        lag64 = np.timedelta64(pd.Timedelta(lag).value, "ns")
+        for q, hz in enumerate(zs):
+            f_[q] = np.datetime64(pd.Timestamp(hz.created_time) + lag, "ns")
+            end = (np.datetime64(pd.Timestamp(hz.superseded_time), "ns") if hz.superseded_time is not None
+                   else np.datetime64("2262-01-01", "ns"))
+            # اولین کندلِ بسته‌شده‌ی بعد از تولد که آن طرف دیستال بسته شده → زون از آن به بعد باطل
+            k0 = int(np.searchsorted(tt, f_[q], side="left"))
+            if k0 < len(tt):
+                bad = (cc[k0:] < hz.low()) if hz.direction == "BUY" else (cc[k0:] > hz.high())
+                if bad.any():
+                    end = min(end, tt[k0 + int(np.argmax(bad))] + lag64)
+            u_[q] = end
+        return (f_, u_, np.array([hz.low() for hz in zs], dtype=float),
+                np.array([hz.high() for hz in zs], dtype=float),
+                np.array([hz.direction == "BUY" for hz in zs], dtype=bool))
+
+    if HTF_ZONE_FILTER and (len(d_z) or len(w_z)):
+        _a = _htf_arrays(d_z, trend_span, d1)
+        _b = _htf_arrays(w_z, big_span, w1)
+        _hz_from, _hz_until, _hz_lo, _hz_hi, _hz_buy = (np.concatenate([x, y]) for x, y in zip(_a, _b))
+    else:
+        _hz_from = None
+
+    def htf_zone_block(direction, price, t_now):
+        """قیمت داخل دیمند روزانه/هفتگی → سل ممنوع | داخل سوپلای روزانه/هفتگی → بای ممنوع"""
+        if _hz_from is None or price is None:
+            return False
+        tt = np.datetime64(pd.Timestamp(t_now), "ns")
+        m = (_hz_from <= tt) & (tt < _hz_until) & (_hz_lo <= price) & (price <= _hz_hi)
+        return bool((m & _hz_buy).any()) if direction == "SELL" else bool((m & ~_hz_buy).any())
+
+    # ۲) فیبوی آخرین سوئینگ هفتگی (فقط هفته‌های بسته‌شده)
+    if FIB_FILTER and len(w1):
+        _fib_lo, _fib_hi = weekly_fib_range(w1, n=FIB_SWING_N)
+        _fib_t = (w1["time"] + big_span).to_numpy(dtype="datetime64[ns]")   # زمان بسته شدن هر هفته
+    else:
+        _fib_lo = None
+
+    def fib_block(direction, entry_price, t_now):
+        if _fib_lo is None:
+            return False
+        k = int(np.searchsorted(_fib_t, np.datetime64(pd.Timestamp(t_now), "ns"), side="right")) - 1
+        if k < 0 or not np.isfinite(_fib_lo[k]) or _fib_hi[k] <= _fib_lo[k]:
+            return False
+        frac = (entry_price - _fib_lo[k]) / (_fib_hi[k] - _fib_lo[k])
+        return frac > FIB_BUY_MAX if direction == "BUY" else frac < FIB_SELL_MIN
+
+    # ۳) سی‌پی‌های پشت‌سرهم: هنگام تولد هر زون، چند زونِ هم‌جهت پشت‌سرهم (بدون زون مخالف بینشان)
+    #    تا آن لحظه ساخته شده؛ زونی که جای زون قبلی را گرفته (هم‌پوشان) دوبار شمرده نمی‌شود
+    _cp_t = np.array([np.datetime64(pd.Timestamp(z.created_time), "ns") for z in h_z], dtype="datetime64[ns]")
+    _cp_run = np.zeros(len(h_z), dtype=int)
+    _seq = []
+    for q, z in enumerate(h_z):
+        ct = z.created_time
+        _seq = [r for r in _seq if not (h_z[r].superseded_time is not None and h_z[r].superseded_time <= ct)]
+        _seq = (_seq + [q])[-60:]
+        run = 0
+        for r in reversed(_seq):
+            if h_z[r].direction != z.direction:
+                break
+            run += 1
+        _cp_run[q] = run
+
+    def cp_block(direction, t_now):
+        if not MAX_CONSECUTIVE_CP or not len(h_z):
+            return False
+        k = int(np.searchsorted(_cp_t, np.datetime64(pd.Timestamp(t_now), "ns"), side="left")) - 1
+        return k >= 0 and h_z[k].direction == direction and _cp_run[k] >= MAX_CONSECUTIVE_CP
+
+    def design_block(z, levels, t_now, price=None):
+        """قوانین استراتژی + فیلترهای آزمایش طراحی؛ خروجی None = قبول، وگرنه کلید دلیل رد.
+        price = قیمت لحظه‌ی تصمیم (برای فیلتر تایم بالا)."""
         height = z.high() - z.low()
         risk = height * risk_h
+        ent_ = z.proximal + entry_off * height if z.direction == "BUY" else z.proximal - entry_off * height
+        if cp_block(z.direction, t_now):
+            return "رد_به_خاطر_سه_سی‌پی_پشت‌سرهم"
+        if FIB_FILTER and fib_block(z.direction, ent_, t_now):
+            return "رد_به_خاطر_فیبوی_هفتگی"
+        if HTF_ZONE_FILTER and htf_zone_block(z.direction, price, t_now):
+            return "رد_به_خاطر_زون_مخالف_تایم_بالا"
         if min_risk_spread > 0 and spread_ref > 0 and risk < min_risk_spread * spread_ref:
             return "رد_به_خاطر_استاپ_کوچک_نسبت_به_اسپرد"
         if htf_location and not htf_ok(z, t_now):
@@ -1041,7 +1351,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                     return "رد_به_خاطر_جای_کم_تا_زون_مخالف"
         return None
 
-    def armed_quality_ok(z, levels, t_now, atr_ref):
+    def armed_quality_ok(z, levels, t_now, atr_ref, price=None):
         """فیلترهای کیفیت برای زون‌های لمس‌نشده‌ای که از قبل سفارش می‌گیرند
         (قبلاً فیلترهای کیفیت فقط روی زون‌های لمس‌شده اعمال می‌شد و سفارش‌های از پیش
         چیده بدون فیلتر پر می‌شدند). حاشیه‌ی سود (min_profit_margin_r) اینجا حساب نمی‌شود
@@ -1050,7 +1360,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             return False
         if min_risk_atr > 0 and (pd.isna(atr_ref) or (z.high() - z.low()) * risk_h < min_risk_atr * float(atr_ref)):
             return False
-        return design_block(z, levels, t_now) is None
+        return design_block(z, levels, t_now, price) is None
 
     zone_df = init_zone_table(h_z)
     z_idx = zone_row_index(zone_df)          # ZoneID → شماره‌ی سطر (جست‌وجوی O(1))
@@ -1102,6 +1412,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         "رد_به_خاطر_استاپ_کوچک_نسبت_به_اسپرد": 0,
         "رد_به_خاطر_محل_زون_تایم_بالا": 0,
         "رد_به_خاطر_جای_کم_تا_زون_مخالف": 0,
+        "رد_به_خاطر_سه_سی‌پی_پشت‌سرهم": 0,
+        "رد_به_خاطر_فیبوی_هفتگی": 0,
+        "رد_به_خاطر_زون_مخالف_تایم_بالا": 0,
     }
 
     # اسپرد (برحسب قیمت) برای مدل Bid/Ask: خرید لیمیت با Ask پر می‌شود و فروش با Ask بسته می‌شود
@@ -1445,6 +1758,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
         drg=bool(_drg_a[di-1])
         hrg=bool(_hrg_a[i-1])
+        # جهت‌های مجاز معامله در این کندل (روند روزانه و روند تایم زون باید هم‌جهت باشند و
+        # جهت زون هم با روند یکی باشد؛ در فاز فشردگی هر دو جهت)
+        allowed_now = dirs_allowed(dtr, htr)
 
         # کندل بسته‌شده‌ی قبلی برای چک‌های لغو (هفتگی و دور شدن قیمت)
         o_prev=float(_o_a[i-1]); c_prev=float(_c_a[i-1])
@@ -1531,11 +1847,13 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 log_event(events, t, symbol, z.zone_id, "Rejected", "رنج")
                 used.add(id(z)); continue
 
-            if dtr==0 or htr==0 or dtr!=htr:
+            if z.direction not in allowed_now:
                 reasons["رد_به_خاطر_روند"] += 1
                 if retry_rejected_zones:
                     continue
-                set_final(zone_df, z.zone_id, "رد شد", "عدم هم‌جهتی روند D1 و H4", t, idx=z_idx)
+                set_final(zone_df, z.zone_id, "رد شد",
+                          "خلاف روند یا ناهم‌جهتی روند روزانه و تایم زون" if TRADE_WITH_TREND_ONLY
+                          else "عدم هم‌جهتی روند D1 و H4", t, idx=z_idx)
                 log_event(events, t, symbol, z.zone_id, "Rejected", "روند")
                 used.add(id(z)); continue
 
@@ -1580,7 +1898,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                     used.add(id(z)); continue
 
             # فیلترهای آزمایش طراحی (اندازه‌ی زون نسبت به اسپرد، محل روی تایم بالا، جای تا زون مخالف)
-            _why = design_block(z, levels, t)
+            _why = design_block(z, levels, t, o)
             if _why:
                 reasons[_why] += 1
                 set_final(zone_df, z.zone_id, "رد شد", _why.replace("_", " "), t, idx=z_idx)
@@ -1605,7 +1923,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         # این سفارش‌ها جای واقعی از سقف حساب اشغال می‌کنند — بدون مدل کردنشان
         # بک‌تست خیلی خوش‌بینانه می‌شود.
         armed_cands = []
-        if arm_untouched_zones and not (drg or hrg or dtr == 0 or htr == 0 or dtr != htr):
+        if arm_untouched_zones and not (drg or hrg) and allowed_now:
             _hits_arm = big_body_hits(t, o_prev, c_prev)
             for k in live_k[(_Z_TC[live_k] == 0) & ~_Z_USED[live_k]]:
                 z = h_z[k]
@@ -1615,12 +1933,14 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                     continue
                 if z.touch_count != 0:
                     continue
+                if z.direction not in allowed_now:
+                    continue
                 opp_dir = "SELL" if z.direction == "BUY" else "BUY"
                 if _hits_arm[opp_dir]:
                     continue
                 if z.high() - z.low() <= 0:
                     continue
-                if not armed_quality_ok(z, levels, t, _h4_atr_a[i-1]):
+                if not armed_quality_ok(z, levels, t, _h4_atr_a[i-1], o):
                     continue
                 armed_cands.append((z, 1))
             armed_cands.sort(key=lambda zc: abs(c - zc[0].proximal))
@@ -1703,7 +2023,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             if not p["active"] or p["filled"]:
                 continue
 
-            if drg or hrg or dtr==0 or htr==0 or dtr!=htr:
+            if drg or hrg or p["z"].direction not in allowed_now:
                 p["active"]=False
                 p["cancel"]="لغو: عدم هم‌جهتی/رنج در لحظه ورود"
                 reasons["لغو_به_خاطر_رنج_یا_روند_لحظه_ورود"] += 1
@@ -1887,10 +2207,10 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             drg_now = d1["range"].iloc[-1]; hrg_now = h4["range"].iloc[-1]
             dtr_now = int(d1["trend"].iloc[-1]); htr_now = int(h4["trend"].iloc[-1])
             warm = (not pd.isna(drg_now)) and (not pd.isna(hrg_now))
-            filters_ok = warm and (not bool(drg_now)) and (not bool(hrg_now)) \
-                and dtr_now != 0 and htr_now == dtr_now
+            allowed_last = dirs_allowed(dtr_now, htr_now)
+            filters_ok = warm and (not bool(drg_now)) and (not bool(hrg_now)) and bool(allowed_last)
 
-            trend_txt = {1: "صعودی", -1: "نزولی", 0: "بدون روند"}
+            trend_txt = TREND_TXT
             state["فیلتر_توضیح"] = (
                 f"روند روزانه: {trend_txt.get(dtr_now)} | روند H4: {trend_txt.get(htr_now)} | "
                 f"رنج روزانه: {'بله' if warm and bool(drg_now) else 'خیر'} | "
@@ -1910,7 +2230,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                     blockers.append("روند روزانه مشخص نیست")
                 if htr_now == 0:
                     blockers.append("روند ۴ساعته مشخص نیست")
-                if dtr_now != 0 and htr_now != 0 and dtr_now != htr_now:
+                if dtr_now != 0 and htr_now != 0 and not allowed_last:
                     blockers.append(f"روند روزانه {trend_txt.get(dtr_now)} ولی ۴ساعته {trend_txt.get(htr_now)} (ناهم‌جهت)")
             state["دلیل_نبود"] = " + ".join(blockers) if blockers else "فیلترها سبزند"
 
@@ -1926,6 +2246,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 # (لغو_به_خاطر_رنج_یا_روند_لحظه_ورود)؛ ربات هم نباید تا ۴ ساعت نگهشان دارد.
                 state["pending"] = []
             else:
+                # سفارشی که جهتش دیگر با روند جور نیست، کندل بعد در بک‌تستر لغو می‌شود
+                state["pending"] = [p_ for p_ in state["pending"] if p_["direction"] in allowed_last]
                 # زون‌های لمس‌شده‌ای که هنوز سفارش نگرفته‌اند — از جمله زونی که در همین آخرین
                 # کندل لمس شد و طبق NO_SAME_BAR_TOUCH_FILL تصمیمش به کندل بعد موکول شد.
                 # بک‌تستر همین‌ها را کندل بعد (بعد از سفارش‌های موجود و قبل از زون‌های لمس‌نشده)
@@ -1941,6 +2263,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                         continue
                     if z.touch_count not in (1, 2):
                         continue
+                    if z.direction not in allowed_last:
+                        continue
                     opp_dir = "SELL" if z.direction == "BUY" else "BUY"
                     if any(body_overlaps_zone(o_last, c_last, wz) for wz in wz_c if wz.direction == opp_dir):
                         continue
@@ -1954,7 +2278,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                     if min_risk_atr > 0 and (pd.isna(atr_last) or
                                              height * (1.0 + entry_off + sl_off) < min_risk_atr * atr_last):
                         continue
-                    if design_block(z, levels_last, t_last):
+                    if design_block(z, levels_last, t_last, c_last):
                         continue
                     if z.direction == "BUY":
                         entry = z.proximal + entry_off * height
@@ -1990,13 +2314,15 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                         continue
                     if z.touch_count != 0:
                         continue
+                    if z.direction not in allowed_last:
+                        continue
                     opp_dir = "SELL" if z.direction == "BUY" else "BUY"
                     if any(body_overlaps_zone(o_last, c_last, wz) for wz in wz_now if wz.direction == opp_dir):
                         continue
                     height = z.high() - z.low()
                     if height <= 0:
                         continue
-                    if not armed_quality_ok(z, levels_last, t_last, atr_last):
+                    if not armed_quality_ok(z, levels_last, t_last, atr_last, c_last):
                         continue
                     if z.direction == "BUY":
                         entry = z.proximal + entry_off * height
@@ -2674,7 +3000,12 @@ def design_verdicts(rows):
         return rows
     base = rows[0]
     base["اختلاف_بازده_با_مبنا٪"] = 0.0
-    base["حکم"] = "مبنا"
+    if base["بازده_کل_حساب٪"] > 0 and base["جمع_R_نیمه_اول"] > 0 and base["جمع_R_نیمه_دوم"] > 0:
+        base["حکم"] = "مبنا — ✅ سودده در هر دو نیمه"
+    elif base["بازده_کل_حساب٪"] > 0:
+        base["حکم"] = "مبنا — ⚠️ سودده ولی فقط در یک نیمه"
+    else:
+        base["حکم"] = "مبنا — ❌ سودده نیست"
     for r in rows[1:]:
         r["اختلاف_بازده_با_مبنا٪"] = round(r["بازده_کل_حساب٪"] - base["بازده_کل_حساب٪"], 2)
         h1, h2 = r["جمع_R_نیمه_اول"], r["جمع_R_نیمه_دوم"]
@@ -2874,6 +3205,15 @@ def main():
     _tz, _tt, _tb = TF_SETS[STRATEGY_TF]
     print(f"🕒 تایم‌فریم‌های استراتژی (STRATEGY_TF = \"{STRATEGY_TF}\"): "
           f"زون و ورود -{_tz} | روند/رنج -{_tt} | زون بزرگ -{_tb}")
+    print("📐 قوانین استراتژی:")
+    print(f"   ورود: پراکسیمال {DEFAULT_ENTRY_OFF*100:+.0f}٪ ارتفاع بیس (مثبت = بیرون، به سمت قیمت) | "
+          f"استاپ: {DEFAULT_SL_OFF*100:.0f}٪ پشت دیستال | تارگت: {DEFAULT_RR:g}R")
+    print(f"   روند: {TREND_MODE} (سقف/کف ساختار: {STRUCT_SWING_N} کندل هر طرف) | "
+          f"فقط هم‌جهت روند: {'بله' if TRADE_WITH_TREND_ONLY else 'خیر'}")
+    print(f"   کنسالیدیشن اوی: {'تا ' + str(LEGOUT_CLEAR_BARS) + ' کندل بعد از بیس' if LEGOUT_CLEAR_BARS else 'خاموش'} | "
+          f"فیلتر تایم بالا: {'روشن' if HTF_ZONE_FILTER else 'خاموش'} | "
+          f"فیبوی هفتگی: {'بای زیر ' + str(FIB_BUY_MAX) + '، سل بالای ' + str(FIB_SELL_MIN) if FIB_FILTER else 'خاموش'} | "
+          f"سی‌پی پشت‌سرهم: {MAX_CONSECUTIVE_CP if MAX_CONSECUTIVE_CP else 'خاموش'}")
     print("🔧 تنظیمات واقع‌بینی بک‌تست:")
     print(f"   کندل ورود بدون تایم پایین‌تر: {ENTRY_BAR_MODE}"
           f"{'  ⚠️ (خوش‌بینانه — فقط برای مقایسه)' if ENTRY_BAR_MODE == 'optimistic' else ''}")
@@ -2940,10 +3280,13 @@ def main():
     if DESIGN_TESTS and LIVE_MODE and live_book is not None and DESIGN_VARIANTS:
         _t0 = max(pd.Timestamp(d0), BACKTEST_START) if _starts else BACKTEST_START
         mid_t = _t0 + (pd.Timestamp(d1_) - _t0) / 2 if _starts else BACKTEST_START
-        design_rows.append(design_compare_row("مبنا (بدون تغییر = سربرگ خلاصه)", live_results, live_book,
-                                              mid_t, "استراتژی فعلی بدون هیچ فیلتر جدید"))
+        _base_name = {"choch": "روند فقط با چاک (= سربرگ خلاصه)",
+                      "choch_tl": "روند با چاک و ترندلاین (= سربرگ خلاصه)",
+                      "legacy": "روند به روش قدیمی ربات (= سربرگ خلاصه)"}.get(TREND_MODE, "مبنا (= سربرگ خلاصه)")
+        design_rows.append(design_compare_row(_base_name, live_results, live_book,
+                                              mid_t, "قوانین استراتژی بالای فایل (ورود +۱۰٪، تایم بالا، فیبو، ۳ سی‌پی، کنسالیدیشن اوی)"))
         n_var = len(DESIGN_VARIANTS)
-        print(f"\n🧪 آزمایش تغییر طراحی: {n_var} اجرای کامل دیگر (هر کدام جدا) — مرز دو نیمه: {mid_t.date()}")
+        print(f"\n🧪 آزمایش: {n_var} اجرای کامل دیگر (هر کدام جدا) — مرز دو نیمه: {mid_t.date()}")
         for k, (name, (kw, desc)) in enumerate(DESIGN_VARIANTS.items(), start=1):
             print(f"   [{k}/{n_var}] {name}: {desc} ...", flush=True)
             call = dict(entry_off=DEFAULT_ENTRY_OFF, sl_off=DEFAULT_SL_OFF, rr=DEFAULT_RR,

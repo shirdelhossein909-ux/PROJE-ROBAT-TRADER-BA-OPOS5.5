@@ -133,6 +133,13 @@ rb.BACKTEST_START = pd.Timestamp("2000-01-01")
 rb.BACKTEST_END = None
 rb.USE_M15 = False
 
+# استراتژی ربات لایو همان نسخه‌ی تست‌شده‌ی قبلی می‌ماند تا نتیجه‌ی بکتست قوانین جدید (چاک،
+# فیلتر تایم بالا، فیبو، ۳ سی‌پی، کنسالیدیشن اوی، ورود +۱۰٪) مشخص شود — حتی اگر run_backtest.py
+# جدیدتر کنار ربات باشد. برای روشن کردن قوانین جدید روی لایو، این بخش باید عوض شود.
+for _k, _v in {"TREND_MODE": "legacy", "TRADE_WITH_TREND_ONLY": False, "LEGOUT_CLEAR_BARS": 0,
+               "HTF_ZONE_FILTER": False, "FIB_FILTER": False, "MAX_CONSECUTIVE_CP": 0}.items():
+    setattr(rb, _k, _v)
+
 try:
     import MetaTrader5 as mt5
 except ImportError:
