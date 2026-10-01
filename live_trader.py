@@ -137,7 +137,9 @@ rb.USE_M15 = False
 # فیلتر تایم بالا، فیبو، ۳ سی‌پی، کنسالیدیشن اوی، ورود +۱۰٪) مشخص شود — حتی اگر run_backtest.py
 # جدیدتر کنار ربات باشد. برای روشن کردن قوانین جدید روی لایو، این بخش باید عوض شود.
 for _k, _v in {"TREND_MODE": "legacy", "TRADE_WITH_TREND_ONLY": False, "LEGOUT_CLEAR_BARS": 0,
-               "HTF_ZONE_FILTER": False, "FIB_FILTER": False, "MAX_CONSECUTIVE_CP": 0}.items():
+               "HTF_ZONE_FILTER": False, "FIB_FILTER": False, "MAX_CONSECUTIVE_CP": 0,
+               "ZONE_TF_TREND_REQUIRED": True, "RANGE_FILTER": True, "MIN_LEGOUT_BODY_ATR": 0.0,
+               "CHOCH_CONFIRM": False, "OPP_ZONE_ROOM_R": 0.0, "CP_ON_TREND_TF": False}.items():
     setattr(rb, _k, _v)
 
 try:
