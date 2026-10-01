@@ -254,6 +254,9 @@ DESIGN_VARIANTS = {
 # سربرگ‌های اضافه‌ی خروجی (پایداری نماد، پرتفوی، تنظیمات و ...). False = فقط «خلاصه»
 # و سربرگ‌های آزمایش طراحی نوشته می‌شوند.
 WRITE_EXTRA_SHEETS = False
+# خروجی ساده: فقط دو سربرگ — «کلی» (همه‌ی اجراها) و «دلیل_استاپ‌ها» (روند ۴ساعته یا بیس ۱۵دقیقه)
+SIMPLE_EXCEL = True
+STOP_CAUSE_DAYS = 30   # بعد از ورود تا چند روز نگاه شود که اول روند ۴ساعته برگشت یا قیمت به تارگت رسید
 
 # فایل «جزئیات_حرفه‌ای.xlsx» ساخته بشود یا نه (False = فقط خلاصه؛ سریع‌تر)
 WRITE_DETAILS = False
@@ -3143,6 +3146,112 @@ def design_symbol_table(results, book):
     return pd.DataFrame(rows)
 
 
+def stop_cause_table(trades, frames, trend_mode, max_days=None):
+    """دلیل هر استاپ کامل (معامله‌ی ضررده که با حدضرر بسته شد) — فقط برای گزارش، نه معامله:
+      «روند ۴ساعته برگشت»: بعد از ورود، روند ۴ساعته خلاف جهت معامله شد پیش از آنکه قیمت به
+          تارگت معامله برسد → روند ۴ساعته اشتباه بود.
+      «بیس ۱۵دقیقه»: روند ۴ساعته سر جایش ماند و قیمت بعد از زدن استاپ به تارگت رسید → جهت
+          درست بود، بیس/نقطه‌ی ورود ۱۵دقیقه نگه نداشت.
+      «نامشخص»: تا max_days روز نه روند برگشت نه تارگت خورد.
+    روند ۴ساعته با همان روش همان اجرا (چاک یا چاک+ترندلاین) و از لحظه‌ی بسته شدن کندل حساب می‌شود."""
+    max_days = STOP_CAUSE_DAYS if max_days is None else max_days
+    cols = ["نماد", "تعداد_معامله", "استاپ_کامل", "روند_۴ساعته_برگشت", "٪_روند",
+            "بیس_۱۵دقیقه_(جهت_درست_بود)", "٪_بیس", "نامشخص", "٪_نامشخص",
+            "بیس_عمق_خلاف_جهت_R_(میانه)"]
+    if trades is None or trades.empty:
+        return pd.DataFrame(columns=cols)
+    win = pd.Timedelta(days=max_days)
+    counts = {}
+    for sym, g in trades.groupby("نماد"):
+        if sym not in frames:
+            continue
+        zdf, tdf_ = frames[sym][0], frames[sym][1]
+        if trend_mode == "legacy":
+            tr = trend_from_swings(tdf_, n=1).to_numpy()
+        else:
+            tr = structure_trend(tdf_, n=STRUCT_SWING_N, use_trendline=(trend_mode == "choch_tl"),
+                                 tl_n=TL_SWING_N).to_numpy()
+        tsp = tdf_["time"].diff().dropna().median()
+        known = (pd.to_datetime(tdf_["time"]) + tsp).to_numpy(dtype="datetime64[ns]")
+        sgn = np.sign(tr)
+        zt = pd.to_datetime(zdf["time"]).to_numpy(dtype="datetime64[ns]")
+        zh = zdf["high"].to_numpy(dtype=float)
+        zl = zdf["low"].to_numpy(dtype=float)
+        c = {"n": len(g), "sl": 0, "trend": 0, "base": 0, "unk": 0, "depth": []}
+        lost = g[(pd.to_numeric(g["نتیجه_R"], errors="coerce") < 0)
+                 & g["علت_خروج"].astype(str).str.contains("حدضرر")]
+        for _, r in lost.iterrows():
+            c["sl"] += 1
+            d = 1 if r["جهت"] == "خرید" else -1
+            te = np.datetime64(pd.Timestamp(r["زمان_ورود"]), "ns")
+            tx = np.datetime64(pd.Timestamp(r["زمان_خروج"]), "ns")
+            tend = te + np.timedelta64(win)
+            # اولین لحظه‌ای که روند ۴ساعته خلاف جهت معامله شد
+            a, b = np.searchsorted(known, te), np.searchsorted(known, tend, side="right")
+            m = sgn[a:b] == -d
+            flip_t = known[a + int(np.argmax(m))] if m.any() else None
+            # اولین کندل ۱۵دقیقه از کندل استاپ به بعد که به تارگت رسید
+            a2, b2 = np.searchsorted(zt, tx), np.searchsorted(zt, tend, side="right")
+            tp = float(r["حدسود"])
+            m2 = (zh[a2:b2] >= tp) if d == 1 else (zl[a2:b2] <= tp)
+            tp_t = zt[a2 + int(np.argmax(m2))] if m2.any() else None
+            if flip_t is not None and (tp_t is None or flip_t <= tp_t):
+                c["trend"] += 1
+            elif tp_t is not None:
+                c["base"] += 1
+                # قیمت پیش از رسیدن به تارگت چقدر خلاف جهت رفت (برحسب R؛ ۱ = همان استاپ)
+                risk = abs(float(r["ورود"]) - float(r["حدضرر"]))
+                a3, k3 = np.searchsorted(zt, te), a2 + int(np.argmax(m2))
+                if risk > 0 and k3 >= a3:
+                    adv = (float(r["ورود"]) - zl[a3:k3 + 1].min()) if d == 1 else (zh[a3:k3 + 1].max() - float(r["ورود"]))
+                    c["depth"].append(adv / risk)
+            else:
+                c["unk"] += 1
+        counts[sym] = c
+
+    def row(name, c):
+        pct = (lambda k: round(c[k] / c["sl"] * 100.0, 1) if c["sl"] else 0.0)
+        return {"نماد": name, "تعداد_معامله": c["n"], "استاپ_کامل": c["sl"],
+                "روند_۴ساعته_برگشت": c["trend"], "٪_روند": pct("trend"),
+                "بیس_۱۵دقیقه_(جهت_درست_بود)": c["base"], "٪_بیس": pct("base"),
+                "نامشخص": c["unk"], "٪_نامشخص": pct("unk"),
+                "بیس_عمق_خلاف_جهت_R_(میانه)": round(float(np.median(c["depth"])), 2) if c["depth"] else None}
+    tot = {k: sum(v[k] for v in counts.values()) for k in ("n", "sl", "trend", "base", "unk")}
+    tot["depth"] = [x for v in counts.values() for x in v["depth"]]
+    rows = [row("کل", tot)] + [row(sym, counts[sym]) for sym in sorted(counts)]
+    return pd.DataFrame(rows, columns=cols)
+
+
+def write_simple_excel(sw, runs, frames):
+    """دو سربرگ: «کلی» (هر اجرا: ردیف کل + نمادها) و «دلیل_استاپ‌ها».
+    runs: [(اسم اجرا, results, book, trend_mode)]"""
+    parts, causes = [], []
+    for name, results, book, tmode in runs:
+        tbl = design_symbol_table(results, book)
+        tbl = pd.concat([tbl[tbl["نماد"] == "کل"], tbl[tbl["نماد"] != "کل"]], ignore_index=True)
+        tbl.insert(0, "اجرا", name)
+        parts += [tbl, pd.DataFrame([{}])]
+        ct = stop_cause_table(_design_trades(results), frames, tmode)
+        ct.insert(0, "اجرا", name)
+        causes += [ct, pd.DataFrame([{}])]
+        if not ct.empty:
+            t0 = ct.iloc[0]
+            print(f"   دلیل {int(t0['استاپ_کامل'])} استاپ «{name}»: روند ۴ساعته {t0['٪_روند']}٪ | "
+                  f"بیس ۱۵دقیقه {t0['٪_بیس']}٪ | نامشخص {t0['٪_نامشخص']}٪")
+    pd.concat(parts, ignore_index=True).to_excel(sw, sheet_name="کلی", index=False)
+    cdf = pd.concat(causes, ignore_index=True)
+    cdf.to_excel(sw, sheet_name="دلیل_استاپ‌ها", index=False)
+    notes = pd.DataFrame({"توضیح": [
+        "استاپ_کامل = معامله‌ی ضررده که با حدضرر بسته شد (معامله‌ای که در 2R نصفش سیو شده حساب نمی‌شود).",
+        "روند_۴ساعته_برگشت = بعد از ورود، روند ۴ساعته خلاف جهت معامله شد پیش از آنکه قیمت به تارگت برسد → مشکل از روند ۴ساعته.",
+        "بیس_۱۵دقیقه = روند ۴ساعته سر جایش ماند و قیمت بعد از زدن استاپ به تارگت رسید → جهت درست بود، بیس ۱۵دقیقه نگه نداشت.",
+        f"نامشخص = تا {STOP_CAUSE_DAYS} روز بعد از ورود نه روند برگشت نه تارگت خورد.",
+        "بیس_عمق_خلاف_جهت_R = در استاپ‌های «بیس»، قیمت پیش از رسیدن به تارگت چند R خلاف جهت رفت "
+        "(نزدیک ۱ تا ۱.۵ = استاپ فقط کمی کوچک بود؛ خیلی بیشتر = خود بیس اشتباه بود).",
+    ]})
+    notes.to_excel(sw, sheet_name="دلیل_استاپ‌ها", index=False, startrow=len(cdf) + 2)
+
+
 def design_compare_row(name, results, book, mid_t, desc):
     """یک ردیف برای سربرگ «مقایسه_طراحی‌ها». نیمه‌ی اول/دوم برای دیدن اینکه بهبود واقعی است
     یا فقط در یک دوره‌ی خوش‌شانس بوده."""
@@ -3461,6 +3570,11 @@ def main():
 
     # --- آزمایش تغییر طراحی: هر تغییر جداگانه، روی همان دیتا و همان حساب «عین لایو» ---
     design_sheets, design_rows = [], []
+    simple_runs = []
+    if LIVE_MODE and live_book is not None:
+        simple_runs.append(({"choch": "روند فقط با چاک", "choch_tl": "روند با چاک و ترندلاین",
+                             "legacy": "روند به روش قدیمی ربات"}.get(TREND_MODE, "مبنا"),
+                            live_results, live_book, TREND_MODE))
     if DESIGN_TESTS and LIVE_MODE and live_book is not None and DESIGN_VARIANTS:
         _t0 = max(pd.Timestamp(d0), BACKTEST_START) if _starts else BACKTEST_START
         mid_t = _t0 + (pd.Timestamp(d1_) - _t0) / 2 if _starts else BACKTEST_START
@@ -3482,6 +3596,7 @@ def main():
                 print(f"   ⚠️ آزمایش {name} ناموفق بود: {e}")
                 continue
             design_sheets.append((name, desc, design_symbol_table(res_v, book_v)))
+            simple_runs.append((name.replace("_", " "), res_v, book_v, kw.get("trend_mode", TREND_MODE)))
             row = design_compare_row(name, res_v, book_v, mid_t, desc)
             design_rows.append(row)
             print(f"        بازده {row['بازده_کل_حساب٪']:.2f}٪ | افت {row['بیشترین_افت٪']:.2f}٪ | "
@@ -3899,9 +4014,12 @@ def main():
             })
 
         with pd.ExcelWriter(summary_path, engine="openpyxl") as sw:
-            summary_out.to_excel(sw, sheet_name="خلاصه", index=False)
+            if SIMPLE_EXCEL and simple_runs:
+                write_simple_excel(sw, simple_runs, frames)
+            else:
+                summary_out.to_excel(sw, sheet_name="خلاصه", index=False)
             # آزمایش‌های طراحی: یک سربرگ مقایسه + یک سربرگ برای هر آزمایش
-            if design_rows:
+            if design_rows and not SIMPLE_EXCEL:
                 pd.DataFrame(design_rows).to_excel(sw, sheet_name="مقایسه_طراحی‌ها", index=False)
                 for _nm, _desc, _tbl in design_sheets:
                     _sh = str(_nm)[:31]
