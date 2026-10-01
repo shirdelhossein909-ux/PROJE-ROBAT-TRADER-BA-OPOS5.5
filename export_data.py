@@ -224,10 +224,44 @@ def to_csv_text(df, digits):
     return out.to_csv(header=False, index=False)
 
 
+class _Tee:
+    """هر چه چاپ می‌شود هم در پنجره می‌آید و هم در فایل گزارش ذخیره می‌شود
+    (اگر پنجره بسته شد، نتیجه از دست نرود)."""
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, s):
+        for st in self.streams:
+            try:
+                st.write(s)
+                st.flush()
+            except Exception:
+                pass
+
+    def flush(self):
+        for st in self.streams:
+            try:
+                st.flush()
+            except Exception:
+                pass
+
+
+LOG_NAME = "گزارش_دانلود.txt"
+
+
 def main():
+    os.makedirs(OUT_DIR, exist_ok=True)
+    log_path = os.path.join(OUT_DIR, LOG_NAME)
+    try:
+        sys.stdout = _Tee(sys.__stdout__, open(log_path, "w", encoding="utf-8"))
+    except Exception:
+        log_path = None
+
     print("=" * 64)
     print(" دانلود دیتای متاتریدر برای بک‌تست")
     print("=" * 64)
+    if log_path:
+        print(f"(همه‌ی این پیام‌ها در این فایل هم ذخیره می‌شود: {log_path})")
 
     problems = check_settings()
     if problems:
@@ -317,6 +351,8 @@ def main():
     fits = [k for k, need in BACKTEST_SETS.items() if all(l in labels for l in need)]
     if fits:
         print(f"در run_backtest.py مقدار STRATEGY_TF باید «{fits[0]}» باشد (همان بالای فایل).")
+    if log_path:
+        print(f"گزارش کامل این دانلود: {log_path}")
     return 0
 
 
