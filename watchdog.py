@@ -152,14 +152,40 @@ def kill_pid(pid):
             pass
 
 
+def unblock_files():
+    """فایل‌هایی که از اینترنت (گیت‌هاب) دانلود شده‌اند علامت «از اینترنت آمده» دارند و ویندوز قبل از
+    اجرایشان پنجره‌ی تأیید (Security Warning) نشان می‌دهد — یعنی ربات تا کسی «Run» را نزند بالا
+    نمی‌آید. این علامت از فایل‌های پوشه‌ی ربات برداشته می‌شود (مثل تیک Unblock در Properties)."""
+    if os.name != "nt":
+        return
+    for fn in os.listdir(HERE):
+        if fn.lower().endswith((".bat", ".py", ".txt")):
+            try:
+                os.remove(os.path.join(HERE, fn) + ":Zone.Identifier")
+            except Exception:
+                pass
+
+
 def start_robot():
-    """start_robot.bat را در پنجره‌ی جدید اجرا می‌کند (مثل دابل‌کلیک)."""
+    """start_robot.bat را در پنجره‌ی جدید اجرا می‌کند — بدون پنجره‌ی تأیید ویندوز.
+    ربات از «گروه پروسه‌های» Task Scheduler جدا اجرا می‌شود تا اگر نگهبان بسته یا دوباره اجرا شد،
+    ربات دست نخورد."""
     if not os.path.exists(BOT_BAT):
         raise FileNotFoundError(f"start_robot.bat کنار نگهبان نیست: {BOT_BAT}")
-    if os.name == "nt":
-        os.startfile(BOT_BAT)
-    else:
+    if os.name != "nt":
         subprocess.Popen(["sh", BOT_BAT], cwd=HERE)
+        return
+    unblock_files()
+    cmd = ["cmd.exe", "/c", "call", BOT_BAT]
+    new_console = 0x00000010            # CREATE_NEW_CONSOLE
+    breakaway = 0x01000000              # CREATE_BREAKAWAY_FROM_JOB
+    for flags in (new_console | breakaway, new_console):
+        try:
+            subprocess.Popen(cmd, cwd=HERE, creationflags=flags, close_fds=True)
+            return
+        except OSError:
+            continue
+    os.startfile(BOT_BAT)               # آخرین راه: مثل دابل‌کلیک
 
 
 def minutes_since_sync():
@@ -384,6 +410,7 @@ def main():
         print("⛔ یک نگهبان دیگر در حال اجراست — این یکی بسته می‌شود.")
         return EXIT_NO_RESTART
     log("========== نگهبان شروع به کار کرد ==========")
+    unblock_files()
     down_since = None          # از کی ربات بی‌ضربان است
     last_start = 0.0           # آخرین تلاش برای راه‌اندازی
     last_remind = 0.0
