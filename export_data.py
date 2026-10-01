@@ -34,6 +34,10 @@ END_DATE = "2025-12-31"
 #    زون‌ها روز اول بک‌تست آماده باشند (معامله فقط از START_DATE؛ همان WARMUP_DAYS در run_backtest.py).
 #    تایم‌های ۱ و ۵ دقیقه فقط از خود START_DATE.
 WARMUP_DAYS = 120
+#    اگر متاتریدر دیتای ۱دقیقه‌ی این بازه را نداشت (مثلاً «Max bars in chart» کم است)، هر چقدر دیتای ۱دقیقه
+#    دارد (آخرین کندل‌ها) گرفته می‌شود و بقیه‌ی تایم‌ها هم برای همان بازه دانلود می‌شوند. بک‌تستر هم خودش
+#    بازه را با دیتای ۱دقیقه هماهنگ می‌کند. False = فقط همان بازه‌ی بالا.
+LTF_FALLBACK_LATEST = True
 
 # ۳) تایم‌فریم‌ها — هر ردیف: ("برچسب اسم فایل", "تایم‌فریم متاتریدر")
 #    برچسب در اسم فایل می‌آید؛ مثلاً ("240", "H4") فایل XAUUSD-240.csv را می‌سازد.
@@ -217,6 +221,31 @@ def fetch(name, tf_name, start, end):
     df = pd.concat(parts, ignore_index=True).drop_duplicates("time").sort_values("time")
     df["time"] = pd.to_datetime(df["time"], unit="s")          # ساعت سرور بروکر (مثل خود متاتریدر)
     return df[["time", "open", "high", "low", "close"]].reset_index(drop=True)
+
+
+def fetch_latest(name, tf_name, count):
+    """آخرین count کندلِ موجود در متاتریدر (وقتی تاریخچه‌ی بازه‌ی خواسته‌شده در دسترس نیست)."""
+    tf = getattr(mt5, "TIMEFRAME_" + tf_name)
+    rates = None
+    for attempt in range(4):
+        rates = mt5.copy_rates_from_pos(name, tf, 1, int(count))
+        if rates is not None and len(rates):
+            break
+        time.sleep(2)
+    if rates is None or not len(rates):
+        return None
+    df = pd.DataFrame(rates).drop_duplicates("time").sort_values("time")
+    df["time"] = pd.to_datetime(df["time"], unit="s")
+    return df[["time", "open", "high", "low", "close"]].reset_index(drop=True)
+
+
+def in_range(df, a, b):
+    """فقط کندل‌های داخل بازه‌ی [a, b) — متاتریدر گاهی برای بازه‌ی بی‌دیتا یک کندل بی‌ربط برمی‌گرداند."""
+    if df is None or df.empty:
+        return df
+    a_ = pd.Timestamp(a.replace(tzinfo=None))
+    b_ = pd.Timestamp(b.replace(tzinfo=None))
+    return df[(df["time"] >= a_) & (df["time"] < b_)].reset_index(drop=True)
 
 
 def drop_open_bar(df, tf_name, last_tick_time):
@@ -403,6 +432,10 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     summary = []
     spread_rows = []
+    fallback_syms = []
+    latest_count = (maxbars - 2) if (maxbars and maxbars < 10 ** 8) else 600000
+    # اول تایم‌های ریز (۱دقیقه): بازه‌ی واقعیِ موجودشان بازه‌ی بقیه‌ی تایم‌ها را تعیین می‌کند
+    ordered_tfs = sorted(TIMEFRAMES, key=lambda x: x[1] not in LTF_NAMES)
     for base in SYMBOLS:
         name = resolve(base)
         if name is None:
@@ -423,10 +456,25 @@ def main():
 
         files = {}
         notes = []
-        for lab, tf_name in TIMEFRAMES:
-            tf_start = start if tf_name in LTF_NAMES else start - dt.timedelta(days=WARMUP_DAYS)
-            df = fetch(name, tf_name, tf_start, end)
+        sym_start, sym_end = start, end
+        for lab, tf_name in ordered_tfs:
+            tf_start = sym_start if tf_name in LTF_NAMES else sym_start - dt.timedelta(days=WARMUP_DAYS)
+            df = in_range(fetch(name, tf_name, tf_start, sym_end), tf_start, sym_end)
             df = drop_open_bar(df, tf_name, last_tick)
+            if tf_name in LTF_NAMES and LTF_FALLBACK_LATEST:
+                span_y = (min(sym_end, dt.datetime.now(dt.timezone.utc)) - sym_start).days / 365.25
+                if df is None or len(df) < 0.8 * BARS_PER_YEAR[tf_name] * span_y:
+                    lat = drop_open_bar(fetch_latest(name, tf_name, latest_count), tf_name, last_tick)
+                    if lat is not None and len(lat) > (0 if df is None else len(df)):
+                        df = lat
+                        f0 = lat["time"].iloc[0].to_pydatetime().replace(tzinfo=dt.timezone.utc)
+                        f1 = lat["time"].iloc[-1].to_pydatetime().replace(tzinfo=dt.timezone.utc)
+                        sym_start, sym_end = f0, f1 + dt.timedelta(minutes=1)
+                        tf_start = sym_start
+                        fallback_syms.append(base)
+                        notes.append(f"{tf_name} فقط {f0:%Y-%m-%d} تا {f1:%Y-%m-%d}")
+                        print(f"   ℹ️ {base} {tf_name}: دیتای بازه‌ی خواسته‌شده در متاتریدر نیست؛ هر چه بود گرفته شد "
+                              f"({f0:%Y-%m-%d} تا {f1:%Y-%m-%d}) و بقیه‌ی تایم‌ها هم برای همین بازه گرفته می‌شوند.")
             if df is None or df.empty:
                 notes.append(f"{tf_name}: دیتا نیامد")
                 print(f"   ⚠️ {base} {tf_name}: دیتا نیامد")
@@ -464,6 +512,11 @@ def main():
     print("=" * 64)
     for base, st, note in summary:
         print(f" {st:10s} {base:7s} {note}")
+    if fallback_syms:
+        print(f"\nℹ️ دیتای ۱دقیقه‌ی بازه‌ی {START_DATE} تا {END_DATE or 'امروز'} در متاتریدر نبود؛ برای "
+              f"{', '.join(fallback_syms)} آخرین دیتای موجود گرفته شد. بک‌تستر بازه را خودش با دیتای ۱دقیقه هماهنگ می‌کند.")
+        print("   برای بازه‌ی کامل: متاتریدر → Tools → Options → Charts → Max bars in chart = Unlimited، بعد متاتریدر را")
+        print("   کامل ببند و دوباره باز کن و این فایل را دوباره اجرا کن.")
     print(f"\nفایل‌ها در: {OUT_DIR}")
     if os.path.normcase(os.path.abspath(OUT_DIR)) != os.path.normcase(
             os.path.join(os.path.expanduser("~"), "Desktop", "0")):

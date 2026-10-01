@@ -3712,6 +3712,7 @@ def leave_one_out_test(frames, spreads, **kw):
 
 
 def main():
+    global BACKTEST_START, BACKTEST_END
     version_name = os.path.basename(os.getcwd())
     outdir = os.path.join(os.getcwd(), "خروجی")
     os.makedirs(outdir, exist_ok=True)
@@ -3823,6 +3824,21 @@ def main():
             print(f"⛔ {symbol}: طبق LIVE_EXCLUDE_SYMBOLS از سبد کنار گذاشته شد")
             continue
         frames[symbol] = (h4, d1, w1, m15)
+
+    # بازه‌ی بک‌تست با دیتای ۱دقیقه هماهنگ می‌شود: اگر متاتریدر دیتای ۱دقیقه‌ی کل بازه را نداشت،
+    # فقط جایی بک‌تست می‌شود که همه‌ی نمادها دیتای ۱دقیقه دارند.
+    _ltf = [f[3] for f in frames.values() if f[3] is not None and len(f[3])]
+    if LTF_MODE and _ltf:
+        l0 = max(pd.Timestamp(x["time"].min()) for x in _ltf)
+        l1 = min(pd.Timestamp(x["time"].max()) for x in _ltf)
+        s0, e0 = BACKTEST_START, (BACKTEST_END if BACKTEST_END is not None else l1)
+        ns, ne = max(s0, l0), min(e0, l1)
+        if ns >= ne:                      # هیچ هم‌پوشانی ندارند → کل بازه‌ی دیتای ۱دقیقه
+            ns, ne = l0, l1
+        if ns > s0 + pd.Timedelta(days=1) or ne < e0 - pd.Timedelta(days=1):
+            print(f"ℹ️ دیتای ۱دقیقه فقط از {l0:%Y-%m-%d %H:%M} تا {l1:%Y-%m-%d %H:%M} هست → بازه‌ی بک‌تست: "
+                  f"{ns:%Y-%m-%d} تا {ne:%Y-%m-%d} (به‌جای {s0:%Y-%m-%d} تا {e0:%Y-%m-%d})")
+            BACKTEST_START, BACKTEST_END = pd.Timestamp(ns), pd.Timestamp(ne)
 
     if USE_M15:
         if no_ltf and len(no_ltf) == len(frames):
