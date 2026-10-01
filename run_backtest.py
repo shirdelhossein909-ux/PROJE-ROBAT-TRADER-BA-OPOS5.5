@@ -508,14 +508,17 @@ def pip_size(symbol):
 
 
 def load_mt5_spreads(datadir):
-    """اسپرد واقعی هر نماد از spreads.csv (خروجی export_data / export_spreads.bat) → {نماد: اسپرد}"""
+    """اسپرد واقعی هر نماد از spreads.csv (خروجی export_data / export_spreads.bat) → {نماد: اسپرد}
+    میانه‌ی تیک‌ها استفاده می‌شود، نه میانگین: پرش‌های لحظه‌ای اسپرد (رول‌اوور نیمه‌شب، باز شدن
+    بازار) میانگینِ نمادهای کم‌معامله مثل CHFJPY را چند برابر اسپرد معمول نشان می‌دهد."""
     path = os.path.join(datadir, "spreads.csv")
     if not os.path.exists(path):
         return {}
     try:
         df = pd.read_csv(path)
+        col = "median" if "median" in df.columns else "spread"
         out = {}
-        for sym, sp in zip(df["symbol"].astype(str), pd.to_numeric(df["spread"], errors="coerce")):
+        for sym, sp in zip(df["symbol"].astype(str), pd.to_numeric(df[col], errors="coerce")):
             if np.isfinite(sp) and sp > 0:
                 out[sym.strip()] = float(sp)
         return out
