@@ -48,6 +48,13 @@ ENTRY_BAR_MODE = "path"
 #     (ربات هم در این حالت سفارش نمی‌گذارد) و زون برای کندل‌های بعد می‌ماند.
 NO_SAME_BAR_TOUCH_FILL = True
 
+# شناسه‌ی زون (ZoneID) — ربات لایو سفارش‌ها را با همین شناسه (کامنت سفارش) پیدا می‌کند.
+#   True  → شناسه‌ی پایدار: نماد + تایم + زمان تولد زون + جهت (مثل XAUUSD_H4_2608191200B).
+#           با جلو رفتن پنجره‌ی ۲۰۰۰ کندلی ربات عوض نمی‌شود.
+#   False → شیوه‌ی قدیمی (شماره‌ی ترتیب زون در پنجره) — با جلو رفتن پنجره جابه‌جا می‌شد و
+#           باعث سفارش تکراری در لایو شد. فقط برای بازسازی گزارش‌های قدیمی.
+STABLE_ZONE_IDS = True
+
 # دیتا فقط قیمت Bid است. خرید لیمیت وقتی پر می‌شود که Ask برسد و حد ضرر/سود فروش با Ask
 # اجرا می‌شود. True = اسپرد هر نماد (جدول spreads در main) در پر شدن و خروج اعمال شود.
 # (کمیسیون جداگانه با COMMISSION_SPREAD_MULT کم می‌شود.)
@@ -389,8 +396,66 @@ def _suffix_minutes(label):
     return {"240": 240, "1D": 1440, "1W": 10080}.get(label, 10 ** 9)
 
 
+def _csvs_in_folder(folder):
+    """همه‌ی CSVهای یک پوشه (و زیرپوشه‌هایش) → {اسم فایل: مسیر کامل}"""
+    out = {}
+    for root, _dirs, files in os.walk(folder):
+        for fn in files:
+            if fn.lower().endswith(".csv"):
+                out.setdefault(fn, os.path.join(root, fn))
+    return out
+
+
+class _FolderSource:
+    """پوشه‌ی بازشده‌ی یک نماد (مثلاً 0\\AUDJPY\\AUDJPY-240.csv) را مثل یک ZIP می‌خواند."""
+    def __init__(self, folder):
+        self._files = _csvs_in_folder(folder)
+
+    def namelist(self):
+        return list(self._files)
+
+    def read(self, name):
+        with open(self._files[name], "rb") as f:
+            return f.read()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _open_data_source(path):
+    """ZIP یک نماد، یا پوشه‌ی بازشده‌اش (CSVها یا یک ZIP داخلش)."""
+    if os.path.isdir(path):
+        if _csvs_in_folder(path):
+            return _FolderSource(path)
+        inner = sorted(glob.glob(os.path.join(path, "**", "*.zip"), recursive=True))
+        if inner:
+            return zipfile.ZipFile(inner[0], "r")
+        raise ValueError(f"داخل پوشه‌ی {path} هیچ فایل CSV یا ZIP نیست.")
+    return zipfile.ZipFile(path, "r")
+
+
+def find_data_sources(datadir):
+    """دیتای هر نماد در پوشه‌ی دیتا: فایل ZIP (مثل XAUUSD.zip) یا پوشه‌ی بازشده‌اش
+    (مثل پوشه‌ی XAUUSD که CSVها داخلش است). اگر هر دو باشد، ZIP خوانده می‌شود."""
+    sources = {}
+    for zp in sorted(glob.glob(os.path.join(datadir, "*.zip"))):
+        sources[os.path.basename(zp).split(".")[0]] = zp
+    for d in sorted(glob.glob(os.path.join(datadir, "*"))):
+        if not os.path.isdir(d):
+            continue
+        sym = os.path.basename(d).split(".")[0]
+        if sym in sources:
+            continue
+        if _csvs_in_folder(d) or glob.glob(os.path.join(d, "**", "*.zip"), recursive=True):
+            sources[sym] = d
+    return [sources[k] for k in sorted(sources)]
+
+
 def load_timeframes_from_zip(zip_path: str, tf_set=None):
-    """خواندن سه تایم‌فریم استراتژی (+ تایم ریزتر اختیاری) از ZIP یک نماد.
+    """خواندن سه تایم‌فریم استراتژی (+ تایم ریزتر اختیاری) از ZIP یک نماد (یا پوشه‌ی بازشده‌اش).
 
     خروجی: (زون، روند، زون بزرگ، تایم ریزتر یا None) — برای سازگاری با بقیه‌ی کد، اسم
     متغیرها همان h4, d1, w1, m15 مانده ولی بسته به STRATEGY_TF می‌تواند M15/H1/H4 باشد."""
@@ -401,7 +466,7 @@ def load_timeframes_from_zip(zip_path: str, tf_set=None):
         raise ValueError(f"STRATEGY_TF نامعتبر است: {key} — مجاز: {', '.join(TF_SETS)}")
     lab_zone, lab_trend, lab_big = TF_SETS[key]
 
-    with zipfile.ZipFile(zip_path, "r") as z:
+    with _open_data_source(zip_path) as z:
         names = z.namelist()
         if not names:
             raise ValueError(f"فایل ZIP خالی است: {zip_path}")
@@ -874,8 +939,16 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
     # ZoneID
     h_z = sorted(h_z, key=lambda z: z.created_time)
+    _ids_seen = {}
     for idx, z in enumerate(h_z, start=1):
-        z.zone_id = f"{symbol}_{zone_tf}_{idx:05d}"
+        if STABLE_ZONE_IDS:
+            zid = (f"{symbol}_{zone_tf}_{pd.Timestamp(z.created_time):%y%m%d%H%M}"
+                   f"{'B' if z.direction == 'BUY' else 'S'}")
+            k = _ids_seen.get(zid, 0) + 1          # دو زون هم‌جهت با یک زمان تولد → پسوند ۲، ۳، ...
+            _ids_seen[zid] = k
+            z.zone_id = zid if k == 1 else f"{zid}{k}"
+        else:
+            z.zone_id = f"{symbol}_{zone_tf}_{idx:05d}"
 
     # ---------- زون‌های بزرگ به‌صورت آرایه (سرعت) ----------
     # «معتبر در لحظه‌ی t» = کندل تأییدش بسته شده (created + big_span <= t) و هنوز جایگزین نشده.
@@ -2774,9 +2847,13 @@ def main():
     # DATA DIR: folder '0' on Desktop (your screenshot)
     datadir = os.path.join(os.path.expandvars(r"%USERPROFILE%"), "Desktop", "0")
 
-    zip_files = sorted(glob.glob(os.path.join(datadir, "*.zip")))
+    # دیتای هر نماد: XAUUSD.zip یا پوشه‌ی بازشده‌ی XAUUSD (با CSVهای داخلش)
+    zip_files = find_data_sources(datadir)
     if not zip_files:
-        raise FileNotFoundError(f"هیچ فایل ZIP در مسیر دیتا پیدا نشد: {datadir}")
+        rars = glob.glob(os.path.join(datadir, "*.rar"))
+        hint = (" — فایل‌های اینجا RAR هستند؛ بازشان کن (Extract) یا همان ZIPهای خروجی export_data را بگذار."
+                if rars else "")
+        raise FileNotFoundError(f"هیچ دیتایی (ZIP یا پوشه‌ی CSV) در مسیر دیتا پیدا نشد: {datadir}{hint}")
 
     all_metrics=[]
     all_reasons=[]

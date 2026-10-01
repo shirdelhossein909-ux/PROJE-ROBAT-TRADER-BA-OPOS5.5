@@ -11,6 +11,7 @@ os.makedirs(CACHE, exist_ok=True)
 sys.path.insert(0, REPO)
 sys.path.insert(0, HERE)
 import run_backtest as rb
+rb.STABLE_ZONE_IDS = False   # همان شناسه‌های قدیمی که ربات لایو در این دوره داشت
 from emulate import SPREADS, BASKET
 
 LIVE_FROM = pd.Timestamp("2026-08-14")

@@ -18,6 +18,7 @@ CACHE = os.path.join(HERE, "_cache")                     # خروجی‌های �
 os.makedirs(CACHE, exist_ok=True)
 sys.path.insert(0, REPO)
 import run_backtest as rb
+rb.STABLE_ZONE_IDS = False   # همان شناسه‌های قدیمی که ربات لایو در این دوره داشت
 
 BASKET = ["XAUUSD", "AUDJPY", "AUDUSD", "CHFJPY", "EURCAD", "EURNZD",
           "GBPJPY", "GBPNZD", "NZDCAD", "USDCHF"]
