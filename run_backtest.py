@@ -49,8 +49,10 @@ RANGE_FILTER = False        # فیلتر رنج قدیمی ربات (بر اسا
 LEGOUT_CLEAR_BARS = 3
 # لگ‌اوت قوی: بدنه‌ی کندل خروج از بیس ≥ این ضریب × ATR(14) همان تایم. ۰ = خاموش
 MIN_LEGOUT_BODY_ATR = 1.0
-# تأیید چاک: حرکت خروج از بیس باید یک زون مخالفِ معتبر (که خودش کنسالیدیشن اوی داده) را با
-# کلوز کندل بشکند — پیش از آنکه قیمت به بیس برگردد. بیس از بسته شدن همان کندل قابل معامله است.
+# تأیید چاک: لگ‌اوت بیس باید «بیس مخالف خودش» را با بادی چاک بدهد — یعنی کلوز کندل آن طرف
+# سقف/کفی که بیس مخالف ساخته (آخرین سقف پایین‌تر برای دیمند، آخرین کف بالاتر برای سوپلای)،
+# پیش از آنکه قیمت به بیس برگردد. بیس مخالف = آخرین بیس مخالفِ شکسته‌نشده پیش از این بیس که
+# خودش کنسالیدیشن اوی داده. بیس از بسته شدن کندل چاک قابل معامله است.
 CHOCH_CONFIRM = True
 
 # ---- تایم روند (۴ساعته) و تایم بالا (روزانه) ----
@@ -104,7 +106,8 @@ STABLE_ZONE_IDS = True
 
 # دیتا فقط قیمت Bid است. خرید لیمیت وقتی پر می‌شود که Ask برسد و حد ضرر/سود فروش با Ask
 # اجرا می‌شود. True = اسپرد هر نماد (جدول spreads در main) در پر شدن و خروج اعمال شود.
-# (کمیسیون جداگانه با COMMISSION_SPREAD_MULT کم می‌شود.)
+# اسپرد هر نماد: اگر فایل spreads.csv (خروجی export_data) کنار دیتا در پوشه‌ی 0 باشد، اسپرد واقعی
+# متاتریدر خودت از آن خوانده می‌شود؛ وگرنه جدول تقریبی SPREAD_TABLE.
 MODEL_BID_ASK = True
 
 # دیتای تایم‌فریم پایین‌تر برای دیدن ترتیب واقعی اتفاقات داخل کندل ۴ساعته.
@@ -120,8 +123,8 @@ USE_M15 = True
 BACKTEST_START = pd.Timestamp("2019-01-01")  # عملاً = شروع دیتای موجود
 BACKTEST_END = None  # نمونه: pd.Timestamp("2024-12-31")؛ None یعنی تا انتهای دیتا
 
-# هزینه‌های معاملاتی تقریبی (نسبت به اسپرد هر نماد؛ در صورت نیاز این دو عدد را ویرایش کن)
-COMMISSION_SPREAD_MULT = 0.5       # کمیسیون رفت‌وبرگشت ≈ نصف اسپرد
+# هزینه‌های معاملاتی (نسبت به اسپرد هر نماد؛ در صورت نیاز این دو عدد را ویرایش کن)
+COMMISSION_SPREAD_MULT = 0.0       # کمیسیون: حساب دموی MetaQuotes کمیسیون ندارد (هیستوری = ۰). حساب واقعی ECN ≈ 0.5
 SWAP_SPREAD_MULT_PER_NIGHT = 0.2   # سواپ ≈ ۲۰٪ اسپرد به ازای هر شب نگهداری پوزیشن
 
 # مقایسه‌ی حالت‌های نقطه‌ی ورود در یک اجرا (شیت «مقایسه_نقطه_ورود» در خلاصه_نتایج.xlsx)
@@ -185,7 +188,7 @@ DEFAULT_MIN_RISK_ATR = 0.0  # حالت اصلی گزارش‌های کامل (ف
 
 # --- بک‌تست پرتفویی: شبیه‌سازی یک حساب مشترک برای همه‌ی نمادها (شیت‌های «پرتفوی») ---
 PORTFOLIO_MAX_OPEN = 5              # حداکثر پوزیشن باز هم‌زمان در کل حساب
-PORTFOLIO_RISK_PER_TRADE = 0.005    # ریسک هر معامله از اکویتی حساب (0.005 = نیم درصد، 0.01 = یک درصد)
+PORTFOLIO_RISK_PER_TRADE = 0.01     # ریسک هر معامله از اکویتی حساب (0.005 = نیم درصد، 0.01 = یک درصد)
 PORTFOLIO_SYMBOLS = []              # خالی = همه‌ی نمادها؛ نمونه: ["AUDCAD","EURUSD","CHFJPY","XAUUSD","GBPCAD"]
 
 # ============================================================================
@@ -201,7 +204,7 @@ LIVE_MAX_PENDING_TOTAL = 8          # سقف سفارش پندینگ کل حسا
 LIVE_MAX_OPEN_TOTAL = 8             # سقف پوزیشن باز کل حساب — برابر MAX_OPEN_TOTAL ربات
 LIVE_MAX_PENDING_PER_SYMBOL = 3     # سقف سفارش هر نماد — برابر حلقه‌ی range(3) ربات
 LIVE_ARM_UNTOUCHED = True           # چیدن سفارش روی زون‌های لمس‌نشده — عین فهرست armed ربات
-LIVE_RISK_PER_TRADE = 0.005         # ریسک هر معامله — برابر RISK_PER_TRADE ربات
+LIVE_RISK_PER_TRADE = 0.01          # ریسک هر معامله: ۱٪ (ربات لایو فعلی هنوز ۰.۵٪ است)
 LIVE_RESERVE = 0.15                 # سرمایه‌ی رزرو — برابر RESERVE ربات
 LIVE_START_EQUITY = 100000.0
 # ترتیب نمادها در سهمیه‌بندی دوری — باید عیناً همان ترتیب BASKET در live_trader.py باشد
@@ -262,7 +265,7 @@ ANALYZE_SESSIONS = False   # تحلیل سشن انجام شد؛ نتیجه‌ا
 SESSION_STABILITY = False
 
 # --- وزن‌دهی ریسک بر اساس سشن (نهایی: حالت تهاجمی، برنده‌ی مقایسه) ---
-USE_DEFAULT_SESSION_WEIGHTS = True
+USE_DEFAULT_SESSION_WEIGHTS = False  # خاموش: ریسک همه‌ی سشن‌ها یکسان
 DEFAULT_SESSION_WEIGHTS = {
     "لندن": 1.5,
     "همپوشانی لندن-نیویورک": 1.25,
@@ -492,6 +495,33 @@ def find_data_sources(datadir):
         if _csvs_in_folder(d) or glob.glob(os.path.join(d, "**", "*.zip"), recursive=True):
             sources[sym] = d
     return [sources[k] for k in sorted(sources)]
+
+
+def pip_size(symbol):
+    if symbol.endswith("JPY"):
+        return 0.01
+    if symbol.startswith("XAU"):
+        return 0.1
+    if symbol.startswith("XAG"):
+        return 0.01
+    return 0.0001
+
+
+def load_mt5_spreads(datadir):
+    """اسپرد واقعی هر نماد از spreads.csv (خروجی export_data / export_spreads.bat) → {نماد: اسپرد}"""
+    path = os.path.join(datadir, "spreads.csv")
+    if not os.path.exists(path):
+        return {}
+    try:
+        df = pd.read_csv(path)
+        out = {}
+        for sym, sp in zip(df["symbol"].astype(str), pd.to_numeric(df["spread"], errors="coerce")):
+            if np.isfinite(sp) and sp > 0:
+                out[sym.strip()] = float(sp)
+        return out
+    except Exception as e:
+        print(f"⚠️ spreads.csv خوانده نشد ({e}) — جدول تقریبی SPREAD_TABLE استفاده می‌شود.")
+        return {}
 
 
 def load_timeframes_from_zip(zip_path: str, tf_set=None):
@@ -942,12 +972,15 @@ def build_zones(df, symbol, tf, max_base_len, atr_s, legout_clear=None):
 def choch_confirm_zones(zones, df, min_body_atr=0.0):
     """اعتبار بیس با «تأیید چاک» و «لگ‌اوت قوی».
 
-    بیس فقط وقتی معتبر است که حرکت خروجش یک زون مخالف را حذف کند: کلوز کندل آن طرف دیستال
-    زون مخالف. زون مخالف باید پیش از تولد این بیس ساخته شده باشد، هنوز شکسته نشده باشد و خودش
-    کنسالیدیشن اوی داده باشد (همه‌ی زون‌های ورودی این تابع آن را دارند). این شکست باید پیش از
-    برگشت قیمت به بیس اتفاق بیفتد. زمان تولد بیس = بسته شدن کندلِ چاک (بدون نگاه به آینده).
+    چاک = لگ‌اوتِ بیس، سقف/کفی را که «بیس مخالف خودش» ساخته با بادی (کلوز کندل) رد کند:
+      دیمند: بیس مخالف = آخرین سوپلایِ شکسته‌نشده‌ی بالای بیس که پیش از شروع بیس متولد شده.
+             سطح چاک = بالاترین high از شروع آن سوپلای تا شروع دیمند (آخرین سقف پایین‌تر).
+      سوپلای: برعکس — آخرین دیمند زیر بیس؛ سطح چاک = پایین‌ترین low (آخرین کف بالاتر).
+    بیس مخالف باید خودش کنسالیدیشن اوی داده باشد (همه‌ی زون‌های ورودی این تابع آن را دارند).
+    چاک باید پیش از برگشت قیمت به بیس اتفاق بیفتد. بیس از بسته شدن دیرترینِ کندل کنسالیدیشن
+    اوی و کندل چاک قابل معامله است (بدون نگاه به آینده).
     min_body_atr > 0: بدنه‌ی کندل خروج باید دست‌کم این ضریب × ATR باشد (لگ‌اوت قوی).
-    زون‌های ضعیف هم به‌عنوان «زون مخالفی که حذف شد» حساب می‌شوند؛ فقط خودشان قابل معامله نیستند."""
+    زون‌های ضعیف هم می‌توانند «بیس مخالف» باشند؛ فقط خودشان قابل معامله نیستند."""
     if not zones:
         return []
     tt = df["time"].to_numpy(dtype="datetime64[ns]")
@@ -978,32 +1011,45 @@ def choch_confirm_zones(zones, df, min_body_atr=0.0):
         m = (seg > level) if above else (seg < level)
         return b * B + int(np.argmax(m))
 
-    born = np.array([int(np.searchsorted(tt, np.datetime64(pd.Timestamp(z.created_time), "ns"))) for z in zones])
+    def idx(t):
+        return int(np.searchsorted(tt, np.datetime64(pd.Timestamp(t), "ns")))
+
+    born = np.array([idx(z.created_time) for z in zones], dtype=np.int64)   # کندل کنسالیدیشن اوی
+    bs = np.array([idx(z.base_start) for z in zones], dtype=np.int64)       # اولین کندل بیس
+    be = np.array([idx(z.base_end) for z in zones], dtype=np.int64)         # آخرین کندل بیس
     buy = np.array([z.direction == "BUY" for z in zones], dtype=bool)
     zlo = np.array([z.low() for z in zones], dtype=float)
     zhi = np.array([z.high() for z in zones], dtype=float)
-    # کندلی که هر زون در آن حذف شد: دیمند با کلوز زیر کفش، سوپلای با کلوز بالای سقفش
+    # کندلی که هر زون در آن شکست: دیمند با کلوز زیر کفش، سوپلای با کلوز بالای سقفش
     brk = np.array([first_beyond(int(born[q]) + 1, zlo[q] if buy[q] else zhi[q], not buy[q])
                     for q in range(len(zones))], dtype=np.int64)
     out = []
     for q, z in enumerate(zones):
         if min_body_atr > 0 and z.conf_body_atr < min_body_atr:
             continue
-        b = born[q]
+        s0 = int(bs[q])
         if buy[q]:
-            cand = (~buy) & (born < b) & (brk > b) & (zhi > zhi[q])     # سوپلای‌های زنده‌ی بالای بیس
+            cand = (~buy) & (born < s0) & (brk >= s0) & (zhi > zhi[q])   # سوپلای‌های زنده‌ی بالای بیس
         else:
-            cand = buy & (born < b) & (brk > b) & (zlo < zlo[q])        # دیمندهای زنده‌ی زیر بیس
+            cand = buy & (born < s0) & (brk >= s0) & (zlo < zlo[q])      # دیمندهای زنده‌ی زیر بیس
         if not cand.any():
             continue
-        k = int(brk[cand].min())                                         # اولین زون مخالفی که حذف شد
+        ci = np.flatnonzero(cand)
+        opp = int(ci[np.argmax(be[ci])])                                # بیس مخالف خودش = آخرینشان
+        a0 = int(bs[opp])
+        if buy[q]:
+            level = float(hi[a0:s0].max())                              # آخرین سقف پایین‌تر
+        else:
+            level = float(lo[a0:s0].min())                              # آخرین کف بالاتر
+        k = first_beyond(int(be[q]) + 1, level, buy[q])                 # کلوز بادی پشت سطح = چاک
         if k >= N:
             continue
+        b = int(born[q])
         if k > b:
             touched = (lo[b + 1:k + 1].min() <= zhi[q]) if buy[q] else (hi[b + 1:k + 1].max() >= zlo[q])
             if touched:                                                  # قیمت پیش از چاک به بیس برگشت
                 continue
-        z.created_time = tt[k]
+        z.created_time = tt[max(k, b)]
         out.append(z)
     return out
 
@@ -1660,6 +1706,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         except Exception:
             nights = 0
         result_r = float(result_r) - (commission_cost + swap_per_night * nights) / risk
+        # هزینه‌ی کل این معامله نسبت به ریسک: اسپرد (رفت‌وبرگشت) + کمیسیون + سواپ
+        cost_r = (spread_ref + commission_cost + swap_per_night * nights) / risk
 
         if book is not None:
             # حساب مشترک: اکویتی و افت سرمایه در سطح کل حساب به‌روز می‌شود
@@ -1679,7 +1727,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             "ZoneID": pos["ZoneID"],
             "پراکسیمال":z.proximal,"دیستال":z.distal,
             "بیس_شروع":z.base_start,"بیس_پایان":z.base_end,
-            "دوجی_شدو":z.doji_shadow
+            "دوجی_شدو":z.doji_shadow, "هزینه_R": float(cost_r)
         })
 
         _zset(pos["ZoneID"], "زمان_خروج", exit_time)
@@ -2224,7 +2272,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             "مبهم_تعداد":0,"مبهم_درصد":0.0,
             "بازده٪_اگر_مبهم_TP":0.0,"بازده٪_اگر_مبهم_استاپ":0.0,
             "فاصله_استاپ_پیپ":0.0,"فاصله_TP_پیپ":0.0,
-            "برد_همان_کندل_تعداد":0,"بازده٪_اگر_برد_همان_کندل_استاپ":0.0
+            "برد_همان_کندل_تعداد":0,"بازده٪_اگر_برد_همان_کندل_استاپ":0.0,
+            "هزینه_هر_معامله_R":0.0,"اسپرد_پیپ":round(spread_ref / pip_size(symbol), 2)
         }
     else:
         wins=tdf.loc[tdf["نتیجه_R"]>0,"نتیجه_R"].sum()
@@ -2250,14 +2299,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         net_if_sl = _net_with(tdf["نتیجه_R"])  # مبهم‌ها همین حالا استاپ حساب شده‌اند
 
         # --- فاصله‌ی استاپ و حدسود به پیپ ---
-        if symbol.endswith("JPY"):
-            pip = 0.01
-        elif symbol == "XAUUSD":
-            pip = 0.1
-        elif symbol == "XAGUSD":
-            pip = 0.01
-        else:
-            pip = 0.0001
+        pip = pip_size(symbol)
         sl_pips = float(((tdf["ورود"] - tdf["حدضرر"]).abs() / pip).mean())
         tp_pips = float(((tdf["حدسود"] - tdf["ورود"]).abs() / pip).mean())
 
@@ -2275,7 +2317,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             "مبهم_تعداد":n_amb,"مبهم_درصد":round(n_amb/len(tdf)*100.0,2),
             "بازده٪_اگر_مبهم_TP":net_if_tp,"بازده٪_اگر_مبهم_استاپ":net_if_sl,
             "فاصله_استاپ_پیپ":round(sl_pips,1),"فاصله_TP_پیپ":round(tp_pips,1),
-            "برد_همان_کندل_تعداد":n_sw,"بازده٪_اگر_برد_همان_کندل_استاپ":net_floor
+            "برد_همان_کندل_تعداد":n_sw,"بازده٪_اگر_برد_همان_کندل_استاپ":net_floor,
+            "هزینه_هر_معامله_R":round(float(tdf["هزینه_R"].median()),3),   # میانه: چند استاپ خیلی ریز میانگین را گمراه می‌کنند
+            "اسپرد_پیپ":round(spread_ref / pip, 2)
         }
 
     reasons_df=pd.DataFrame([{"نماد":symbol,"دلیل":k,"تعداد":int(v)} for k,v in reasons.items()])
@@ -2613,7 +2657,7 @@ def _find_baseline_metrics_path(current_dir: str):
     return baseline_old if os.path.isfile(baseline_old) else None
 
 def augment_metrics_with_change_review(metrics_df: pd.DataFrame, current_dir: str, years: int,
-                                       book=None):
+                                       book=None, trades=None):
     """
     به metrics_df ستون‌های مقایسه با نسخه قبلی اضافه می‌کند (اگر پیدا شود).
     همچنین یک ردیف «کل» اضافه می‌کند که KPIهای وزنی را نشان می‌دهد.
@@ -2657,6 +2701,8 @@ def augment_metrics_with_change_review(metrics_df: pd.DataFrame, current_dir: st
         "میانگین_R": round(r_w, 3),
         "CAGR_ماهانه_% (تقریب وزن‌مساوی)": round(port_monthly, 2),
     }
+    if trades is not None and not trades.empty and "هزینه_R" in trades.columns:
+        summary_row["هزینه_هر_معامله_R"] = round(float(trades["هزینه_R"].astype(float).median()), 3)
 
     # Baseline
     baseline_path = _find_baseline_metrics_path(current_dir)
@@ -3078,14 +3124,19 @@ def design_symbol_table(results, book):
         m = r[0].iloc[0]
         rows.append({"نماد": sym, "تعداد": int(m["تعداد"]), "درصد_برد": m["درصد_برد"],
                      "فاکتور_سود": m["فاکتور_سود"], "میانگین_R": m["میانگین_R"],
-                     "سهم_از_بازده_حساب٪": m["بازده_خالص٪"], "افت_سهم_این_نماد٪": m["حداکثر_افت٪"]})
+                     "سهم_از_بازده_حساب٪": m["بازده_خالص٪"], "افت_سهم_این_نماد٪": m["حداکثر_افت٪"],
+                     "فاصله_استاپ_پیپ": m.get("فاصله_استاپ_پیپ", 0.0),
+                     "هزینه_هر_معامله_R": m.get("هزینه_هر_معامله_R", 0.0),
+                     "اسپرد_پیپ": m.get("اسپرد_پیپ", 0.0)})
     tr = _design_trades(results)
     R = tr["نتیجه_R"].astype(float)
+    C = tr["هزینه_R"].astype(float) if "هزینه_R" in tr.columns else pd.Series(dtype=float)
     rows.append({"نماد": "کل", "تعداد": int(len(R)),
                  "درصد_برد": round(float((R > 0).mean() * 100.0), 2) if len(R) else 0.0,
                  "فاکتور_سود": _pf(R), "میانگین_R": round(float(R.mean()), 3) if len(R) else 0.0,
                  "سهم_از_بازده_حساب٪": round((book.equity / book.start_equity - 1.0) * 100.0, 2),
-                 "افت_سهم_این_نماد٪": round(book.max_dd * 100.0, 2)})
+                 "افت_سهم_این_نماد٪": round(book.max_dd * 100.0, 2),
+                 "هزینه_هر_معامله_R": round(float(C.median()), 3) if len(C) else 0.0})
     return pd.DataFrame(rows)
 
 
@@ -3299,6 +3350,16 @@ def main():
                 if rars else "")
         raise FileNotFoundError(f"هیچ دیتایی (ZIP یا پوشه‌ی CSV) در مسیر دیتا پیدا نشد: {datadir}{hint}")
 
+    # اسپرد واقعی متاتریدر خودت (spreads.csv در پوشه‌ی دیتا)؛ نمادهایی که در آن نیستند → جدول تقریبی
+    mt5_spreads = load_mt5_spreads(datadir)
+    if mt5_spreads:
+        spreads.update(mt5_spreads)
+        SPREAD_TABLE.update(mt5_spreads)
+        print("📏 اسپرد هر نماد از spreads.csv (متاتریدر خودت): " + " | ".join(
+            f"{k} {v / pip_size(k):.1f}" for k, v in sorted(mt5_spreads.items())) + " پیپ")
+    else:
+        print("⚠️ spreads.csv در پوشه‌ی دیتا نیست → اسپرد از جدول تقریبی. برای اسپرد واقعی export_spreads.bat را اجرا کن.")
+
     all_metrics=[]
     all_reasons=[]
     all_trades=[]
@@ -3336,6 +3397,9 @@ def main():
           f"{'  ⚠️ (خوش‌بینانه — فقط برای مقایسه)' if ENTRY_BAR_MODE == 'optimistic' else ''}")
     print(f"   سفارش روی لمسِ همین کندل: {'از کندل بعد (مثل لایو)' if NO_SAME_BAR_TOUCH_FILL else '⚠️ همین کندل (نگاه به آینده)'}")
     print(f"   مدل Bid/Ask با اسپرد: {'روشن' if MODEL_BID_ASK else 'خاموش'}")
+    print(f"   ریسک هر معامله: {LIVE_RISK_PER_TRADE * 100:g}٪ | وزن سشن: "
+          f"{'روشن' if USE_DEFAULT_SESSION_WEIGHTS else 'خاموش (ریسک همه‌ی سشن‌ها یکسان)'} | "
+          f"کمیسیون: {'ندارد' if COMMISSION_SPREAD_MULT == 0 else f'{COMMISSION_SPREAD_MULT:g}× اسپرد'}")
     frames = {}
     no_ltf = []
     for zp in zip_files:
@@ -3541,7 +3605,7 @@ def main():
 
     # --- Review change impact (compares with previous version if available) ---
     metrics_df, baseline_path = augment_metrics_with_change_review(metrics_df, os.getcwd(), years,
-                                                                   book=live_book)
+                                                                   book=live_book, trades=trades_df)
 
     
     # --- خروجی‌ها: فقط دو فایل در پوشه «خروجی» ---
@@ -3698,7 +3762,8 @@ def main():
 
         # فقط شاخص‌های کلیدی — خروجی تمیز و خوانا
         summary_cols = [
-            "نماد", "تعداد", "درصد_برد", "فاکتور_سود", "میانگین_R", "بازده_خالص٪", "حداکثر_افت٪"
+            "نماد", "تعداد", "درصد_برد", "فاکتور_سود", "میانگین_R", "بازده_خالص٪", "حداکثر_افت٪",
+            "فاصله_استاپ_پیپ", "هزینه_هر_معامله_R", "اسپرد_پیپ"
         ]
         for c in summary_cols:
             if c not in summary_df.columns:

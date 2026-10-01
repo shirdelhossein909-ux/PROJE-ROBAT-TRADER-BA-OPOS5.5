@@ -68,7 +68,12 @@ SYMBOLS = ["XAUUSD", "AUDJPY", "AUDUSD", "CHFJPY", "EURCAD", "EURNZD",
 #       OUT_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "0")
 OUT_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "دیتای_جدید_بکتست")
 
-# ۶) مسیر فایل terminal64.exe متاتریدر — معمولاً خالی بگذار.
+# ۶) اسپرد واقعی: میانگین اسپرد (Ask − Bid) تیک‌های چند روز اخیر هر نماد از همین متاتریدر
+#    اندازه گرفته و در فایل spreads.csv کنار ZIPها ذخیره می‌شود؛ بک‌تستر از آن استفاده می‌کند.
+#    فقط اسپرد (بدون دانلود دوباره‌ی کندل‌ها): export_spreads.bat را اجرا کن.
+SPREAD_DAYS = 5
+
+# ۷) مسیر فایل terminal64.exe متاتریدر — معمولاً خالی بگذار.
 #    فقط اگر چند متاتریدر نصب داری و به اشتباه وصل می‌شود، مسیرش را اینجا بنویس، مثلاً:
 #       r"C:\Program Files\MetaTrader 5\terminal64.exe"
 TERMINAL_PATH = ""
@@ -250,6 +255,100 @@ class _Tee:
 
 
 LOG_NAME = "گزارش_دانلود.txt"
+SPREADS_NAME = "spreads.csv"
+DATA_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "0")   # پوشه‌ای که بک‌تستر می‌خواند
+
+
+def measure_spread(name, si):
+    """اسپرد واقعی نماد (برحسب قیمت): میانگین Ask − Bid تیک‌های SPREAD_DAYS روز اخیر.
+    خروجی: (میانگین, میانه, تعداد تیک, منبع). روزبه‌روز خوانده می‌شود تا حافظه پر نشود."""
+    point = float(getattr(si, "point", 0.0) or 0.0)
+    now = dt.datetime.now(dt.timezone.utc)
+    total, count, samples = 0.0, 0, []
+    for d in range(SPREAD_DAYS + 3, 0, -1):          # چند روز بیشتر، چون آخر هفته تیک ندارد
+        a = now - dt.timedelta(days=d)
+        ticks = mt5.copy_ticks_range(name, a, a + dt.timedelta(days=1), mt5.COPY_TICKS_INFO)
+        if ticks is None or len(ticks) == 0:
+            continue
+        sp = ticks["ask"] - ticks["bid"]
+        sp = sp[(ticks["bid"] > 0) & (sp > 0)]
+        if len(sp) == 0:
+            continue
+        total += float(sp.sum())
+        count += int(len(sp))
+        samples.append(sp[::max(1, len(sp) // 20000)])
+    if count:
+        import numpy as np
+        med = float(np.median(np.concatenate(samples)))
+        return total / count, med, count, "تیک"
+    # تیک نیامد → ستون اسپرد کندل‌های ۱۵دقیقه (کمینه‌ی اسپرد هر کندل؛ کمی خوش‌بینانه)
+    rates = mt5.copy_rates_from_pos(name, mt5.TIMEFRAME_M15, 0, 2000)
+    if rates is not None and len(rates) and point > 0:
+        sp = rates["spread"].astype(float) * point
+        sp = sp[sp > 0]
+        if len(sp):
+            return float(sp.mean()), float(sorted(sp)[len(sp) // 2]), 0, "کندل"
+    cur = float(getattr(si, "spread", 0) or 0) * point
+    return cur, cur, 0, "لحظه‌ای"
+
+
+def write_spreads(rows, dirs):
+    """rows: [(نماد, میانگین, میانه, تعداد تیک, منبع, digits)] → spreads.csv در هر پوشه‌ی dirs"""
+    lines = ["symbol,spread,median,ticks,source"]
+    for base, mean, med, n, src, digits in rows:
+        nd = max(int(digits) + 2, 6)
+        lines.append(f"{base},{mean:.{nd}f},{med:.{nd}f},{n},{src}")
+    text = "\n".join(lines) + "\n"
+    out = []
+    for d in dirs:
+        if not d or not os.path.isdir(d):
+            continue
+        path = os.path.join(d, SPREADS_NAME)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        out.append(path)
+    return out
+
+
+def _pip(base):
+    if base.endswith("JPY"):
+        return 0.01
+    if base.startswith("XAU"):
+        return 0.1
+    if base.startswith("XAG"):
+        return 0.01
+    return 0.0001
+
+
+def spreads_only():
+    """فقط اندازه‌گیری اسپرد همه‌ی نمادها (بدون دانلود کندل) → spreads.csv"""
+    print("=" * 64)
+    print(f" اندازه‌گیری اسپرد واقعی متاتریدر (میانگین تیک‌های {SPREAD_DAYS} روز اخیر)")
+    print("=" * 64)
+    if connect() is None:
+        return 1
+    rows = []
+    for base in SYMBOLS:
+        name = resolve(base)
+        if name is None:
+            print(f"❌ {base}: نزد بروکر پیدا نشد")
+            continue
+        si = mt5.symbol_info(name)
+        mean, med, n, src = measure_spread(name, si)
+        rows.append((base, mean, med, n, src, int(getattr(si, "digits", 5) or 5)))
+        print(f"   {base:7s} اسپرد میانگین {mean / _pip(base):6.2f} پیپ | میانه {med / _pip(base):6.2f} پیپ"
+              f" | {n:,} تیک ({src})")
+    mt5.shutdown()
+    if not rows:
+        return 1
+    os.makedirs(OUT_DIR, exist_ok=True)
+    paths = write_spreads(rows, [OUT_DIR, DATA_DIR])
+    print("\nذخیره شد:")
+    for p_ in paths:
+        print("   " + p_)
+    if not any(os.path.dirname(p_) == DATA_DIR for p_ in paths):
+        print(f"⚠️ پوشه‌ی {DATA_DIR} پیدا نشد؛ فایل spreads.csv را خودت در پوشه‌ی 0 کپی کن.")
+    return 0
 
 
 def main():
@@ -295,6 +394,7 @@ def main():
 
     os.makedirs(OUT_DIR, exist_ok=True)
     summary = []
+    spread_rows = []
     for base in SYMBOLS:
         name = resolve(base)
         if name is None:
@@ -305,6 +405,13 @@ def main():
         digits = int(getattr(si, "digits", 5) or 5)
         tick = mt5.symbol_info_tick(name)
         last_tick = pd.to_datetime(tick.time, unit="s") if (tick is not None and tick.time) else None
+
+        try:
+            mean, med, n_t, src = measure_spread(name, si)
+            spread_rows.append((base, mean, med, n_t, src, digits))
+            print(f"   {base:7s} اسپرد واقعی: میانگین {mean / _pip(base):.2f} پیپ ({src})")
+        except Exception as e:
+            print(f"   ⚠️ {base}: اندازه‌گیری اسپرد نشد ({e})")
 
         files = {}
         notes = []
@@ -340,6 +447,8 @@ def main():
         summary.append((base, "✅", "، ".join(notes)))
 
     mt5.shutdown()
+    if spread_rows:
+        write_spreads(spread_rows, [OUT_DIR])
 
     print("=" * 64)
     print(" نتیجه")
@@ -349,7 +458,7 @@ def main():
     print(f"\nفایل‌ها در: {OUT_DIR}")
     if os.path.normcase(os.path.abspath(OUT_DIR)) != os.path.normcase(
             os.path.join(os.path.expanduser("~"), "Desktop", "0")):
-        print("برای بک‌تست: فایل‌های ZIP این پوشه را در پوشه‌ی «0» روی دسکتاپ کپی کن (جای قبلی‌ها).")
+        print("برای بک‌تست: فایل‌های ZIP و spreads.csv این پوشه را در پوشه‌ی «0» روی دسکتاپ کپی کن (جای قبلی‌ها).")
     labels = [lab for lab, _ in TIMEFRAMES]
     fits = [k for k, need in BACKTEST_SETS.items() if all(l in labels for l in need)]
     if fits:
@@ -361,7 +470,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        code = main()
+        code = spreads_only() if "--spreads" in sys.argv[1:] else main()
     except KeyboardInterrupt:
         print("\n⏹️ متوقف شد.")
         code = 1
