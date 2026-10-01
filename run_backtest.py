@@ -49,9 +49,9 @@ RANGE_FILTER = False        # فیلتر رنج قدیمی ربات (بر اسا
 LEGOUT_CLEAR_BARS = 3
 # لگ‌اوت قوی: بدنه‌ی کندل خروج از بیس ≥ این ضریب × ATR(14) همان تایم. ۰ = خاموش
 MIN_LEGOUT_BODY_ATR = 1.0
-# بیس‌های مخالفِ چسبیده به هم یک بیس حساب می‌شوند و چاک باید پشت دورترینشان با بادی بسته شود.
-# چسبیده = فاصله‌ی قیمتی‌شان حداکثر این ضریب × ATR و فاصله‌ی زمانی‌شان حداکثر این تعداد کندل
-# (یک کندل، دو کندل متوسط یا چند کندل ریز). همین قانون برای چاک ۱دقیقه هم هست.
+# فقط چاک ۱دقیقه: بیس‌های مخالفِ چسبیده به هم یک بیس حساب می‌شوند و چاک باید پشت دورترینشان با
+# بادی بسته شود. چسبیده = فاصله‌ی قیمتی‌شان (یا دور شدن قیمت بینشان) حداکثر این ضریب × ATR و فاصله‌ی
+# زمانی‌شان حداکثر این تعداد کندل (یک کندل، دو کندل متوسط یا چند کندل ریز). روی ۱۵دقیقه اعمال نمی‌شود.
 CHOCH_CLUSTER_GAP_ATR = 1.5
 CHOCH_CLUSTER_MAX_BARS = 5
 # بی‌اعتبار شدن بیس: کندل ۱۵دقیقه پشت دیستال بسته شود (سایه حساب نیست)
@@ -254,17 +254,21 @@ LEAVE_ONE_OUT_TEST = False
 # مبنا (بدون تغییر = سربرگ «خلاصه») نشان می‌دهد.
 # ⚠️ زمان‌بر: هر ردیف یک اجرای کامل. ردیفی را که نمی‌خواهی با # غیرفعال کن.
 DESIGN_TESTS = True
+# اجرای اصلی: «zone» = قیمت به بیس ۱۵دقیقه می‌رسد → منتظر چاک ۱دقیقه در جهت بیس → بعد اوردر روی همان
+# بیس ۱۵دقیقه (ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R) | «base» = اوردر روی بیس ۱دقیقه | None = بدون تأیید (روش قدیمی)
+LTF_MODE = "zone"
+LTF_RUN_NAMES = {"zone": "تأیید ۱دقیقه + ورود روی بیس ۱۵دقیقه",
+                 "base": "تأیید ۱دقیقه + ورود روی بیس ۱دقیقه",
+                 None: "ورود لیمیت ۱۵دقیقه (بدون تأیید)"}
 DESIGN_VARIANTS = {
-    # نام اجرا: (تنظیمات، توضیح) — اجرای اصلی = ورود لیمیت ۱۵دقیقه بدون تأیید (روش فعلی)
-    "تأیید_۱دقیقه_ورود_بیس_۱۵دقیقه": ({"ltf_mode": "zone"},
-        "قیمت به بیس ۱۵دقیقه می‌رسد → منتظر چاک ۱دقیقه در جهت بیس → بعد اوردر روی همان بیس ۱۵دقیقه "
-        "(ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R)"),
+    # نام اجرا: (تنظیمات، توضیح) — اجرای اصلی بالا (LTF_MODE)
     "تأیید_۱دقیقه_ورود_بیس_۱دقیقه": ({"ltf_mode": "base"},
         "قیمت به بیس ۱۵دقیقه می‌رسد → منتظر چاک ۱دقیقه در جهت بیس → بعد اوردر روی بیس ۱دقیقه‌ای که چاک "
         "را ساخت (ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R)"),
 }
-# تأیید ۱دقیقه: سفارشِ بعد از تأیید اگر قیمت این‌قدر R دور شد و پر نشد، لغو می‌شود
-LTF_CANCEL_R = 5.0
+# تأیید ۱دقیقه: سفارشِ بعد از تأیید اگر قیمت این‌قدر R از بیس دور شد و پر نشد، لغو می‌شود
+# (تارگت خود معامله همان 3R است. وقتی ربات سودده شد، چند مقدار دیگرِ این عدد هم بکتست شود.)
+LTF_CANCEL_R = 7.0
 # ورود روی بیس ۱دقیقه: اگر استاپ از این ضریب × اسپرد کوچک‌تر باشد ورود نمی‌شود (استاپ داخل اسپرد)
 LTF_MIN_RISK_SPREAD = 2.0
 
@@ -1393,10 +1397,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
     w_z = dedup_zones_pit(build_zones(w1, symbol, "BIG", 12, w1["atr"])) if big_enabled else []
     # بیس‌های تایم زون: کنسالیدیشن اوی (داخل build_zones) → لگ‌اوت قوی + تأیید چاک → حذف هم‌پوشان‌ها
-    _weak = [] if CHOCH_CONFIRM else None          # بیس‌های بدون اوی — فقط برای «بیس‌های چسبیده»
-    h_raw = build_zones(h4, symbol, zone_tf, 6,  h4["atr"], weak_out=_weak)
-    if CHOCH_CONFIRM:
-        h_raw = choch_confirm_zones(h_raw, h4, min_body_atr=MIN_LEGOUT_BODY_ATR, weak=_weak)
+    h_raw = build_zones(h4, symbol, zone_tf, 6,  h4["atr"])
+    if CHOCH_CONFIRM:   # «بیس‌های چسبیده» فقط برای ۱دقیقه است؛ اینجا خاموش
+        h_raw = choch_confirm_zones(h_raw, h4, min_body_atr=MIN_LEGOUT_BODY_ATR, cluster_gap_atr=0.0)
     elif MIN_LEGOUT_BODY_ATR > 0:
         h_raw = [z for z in h_raw if z.conf_body_atr >= MIN_LEGOUT_BODY_ATR]
     h_z = dedup_zones_pit(h_raw)
@@ -3785,7 +3788,7 @@ def main():
           f"فیلتر رنج: {'روشن' if RANGE_FILTER else 'خاموش'}")
     print(f"   بیس: کنسالیدیشن اوی {'تا ' + str(LEGOUT_CLEAR_BARS) + ' کندل' if LEGOUT_CLEAR_BARS else 'خاموش'} | "
           f"لگ‌اوت قوی {'≥ ' + str(MIN_LEGOUT_BODY_ATR) + '×ATR' if MIN_LEGOUT_BODY_ATR else 'خاموش'} | "
-          f"تأیید چاک {'روشن' if CHOCH_CONFIRM else 'خاموش'} (بیس‌های چسبیده یکی: ≤{CHOCH_CLUSTER_MAX_BARS} کندل و "
+          f"تأیید چاک {'روشن' if CHOCH_CONFIRM else 'خاموش'} (۱دقیقه: بیس‌های چسبیده یکی، ≤{CHOCH_CLUSTER_MAX_BARS} کندل و "
           f"≤{CHOCH_CLUSTER_GAP_ATR:g}×ATR) | بی‌اعتباری با کلوز پشت بیس: "
           f"{'روشن' if ZONE_INVALIDATE_ON_CLOSE else 'خاموش'}")
     _has_big = TF_SETS[STRATEGY_TF][2] is not None
@@ -3855,10 +3858,14 @@ def main():
         print(f"\n🔗 حالت «عین لایو»: {len(frames)} نماد هم‌زمان روی یک حساب | "
               f"سقف {LIVE_MAX_PENDING_TOTAL} سفارش و {LIVE_MAX_OPEN_TOTAL} پوزیشن در کل حساب، "
               f"هر نماد حداکثر {LIVE_MAX_PENDING_PER_SYMBOL} سفارش")
+        if LTF_MODE and all(fr[3] is None for fr in frames.values()):
+            raise ValueError("دیتای ۱دقیقه داخل ZIPها نیست (فایل -1.csv) ولی بک‌تست با تأیید ۱دقیقه است. "
+                             "export_data را با تایم M1 اجرا کن و ZIPهای تازه را در پوشه‌ی 0 بگذار.")
+        print(f"   [اجرای اصلی] {LTF_RUN_NAMES.get(LTF_MODE, LTF_MODE)} ...", flush=True)
         live_results, live_book, live_alloc = portfolio_live_replay(
             frames, spreads, entry_off=DEFAULT_ENTRY_OFF, sl_off=DEFAULT_SL_OFF,
             rr=DEFAULT_RR, manage_mode=DEFAULT_MANAGE, min_risk_atr=DEFAULT_MIN_RISK_ATR,
-            invalidate_on_breach=ZONE_INVALIDATE_ON_CLOSE)
+            invalidate_on_breach=ZONE_INVALIDATE_ON_CLOSE, ltf_mode=LTF_MODE)
         print(f"   اکویتی پایانی: {live_book.equity:,.0f} | "
               f"بازده {(live_book.equity/live_book.start_equity-1)*100:.2f}٪ | "
               f"حداکثر افت {live_book.max_dd*100:.2f}٪")
@@ -3867,7 +3874,7 @@ def main():
     design_sheets, design_rows = [], []
     simple_runs = []
     if LIVE_MODE and live_book is not None:
-        simple_runs.append(("ورود لیمیت ۱۵دقیقه (بدون تأیید)", live_results, live_book, TREND_MODE))
+        simple_runs.append((LTF_RUN_NAMES.get(LTF_MODE, str(LTF_MODE)), live_results, live_book, TREND_MODE))
     if DESIGN_TESTS and LIVE_MODE and live_book is not None and DESIGN_VARIANTS:
         _t0 = max(pd.Timestamp(d0), BACKTEST_START) if _starts else BACKTEST_START
         mid_t = _t0 + (pd.Timestamp(d1_) - _t0) / 2 if _starts else BACKTEST_START
