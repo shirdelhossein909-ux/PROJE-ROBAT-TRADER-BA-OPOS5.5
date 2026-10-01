@@ -211,9 +211,10 @@ PORTFOLIO_SYMBOLS = []              # خالی = همه‌ی نمادها؛ نم
 # در این حالت، موتور همه‌ی نمادها را کندل‌به‌کندل با هم جلو می‌برد و سهمیه‌بندی
 # دوریِ (round-robin) ربات را عیناً اجرا می‌کند.
 LIVE_MODE = True                    # True = شبیه‌سازی عین لایو (توصیه‌شده)
-LIVE_MAX_PENDING_TOTAL = 8          # سقف سفارش پندینگ کل حساب — برابر MAX_PENDING_TOTAL ربات
-LIVE_MAX_OPEN_TOTAL = 8             # سقف پوزیشن باز کل حساب — برابر MAX_OPEN_TOTAL ربات
-LIVE_MAX_PENDING_PER_SYMBOL = 3     # سقف سفارش هر نماد — برابر حلقه‌ی range(3) ربات
+# ۰ = بدون سقف (فعلاً بی‌سقف تا خود استراتژی سنجیده شود؛ ربات لایو قدیمی: ۸ / ۸ / ۳)
+LIVE_MAX_PENDING_TOTAL = 0          # سقف سفارش پندینگ کل حساب
+LIVE_MAX_OPEN_TOTAL = 0             # سقف پوزیشن باز کل حساب
+LIVE_MAX_PENDING_PER_SYMBOL = 0     # سقف سفارش هر نماد
 LIVE_ARM_UNTOUCHED = True           # چیدن سفارش روی زون‌های لمس‌نشده — عین فهرست armed ربات
 LIVE_RISK_PER_TRADE = 0.01          # ریسک هر معامله: ۱٪ (ربات لایو فعلی هنوز ۰.۵٪ است)
 LIVE_RESERVE = 0.15                 # سرمایه‌ی رزرو — برابر RESERVE ربات
@@ -277,6 +278,9 @@ LTF_MIN_RISK_SPREAD = 2.0
 WRITE_EXTRA_SHEETS = False
 # خروجی ساده: فقط دو سربرگ — «کلی» (همه‌ی اجراها) و «دلیل_استاپ‌ها» (روند ۴ساعته یا بیس ۱۵دقیقه)
 SIMPLE_EXCEL = True
+# نمودار هر معامله (عکس PNG در «خروجی/نمودار_معاملات») برای مقایسه با روش دستی — به matplotlib نیاز دارد
+TRADE_CHARTS = True
+TRADE_CHARTS_MAX = 400      # حداکثر تعداد نمودار هر اجرا
 STOP_CAUSE_DAYS = 30   # بعد از ورود تا چند روز نگاه شود که اول روند ۴ساعته برگشت یا قیمت به تارگت رسید
 
 # فایل «جزئیات_حرفه‌ای.xlsx» ساخته بشود یا نه (False = فقط خلاصه؛ سریع‌تر)
@@ -1147,6 +1151,8 @@ def choch_confirm_zones(zones, df, min_body_atr=0.0, weak=None, cluster_gap_atr=
             if touched:                                                  # قیمت پیش از چاک به بیس برگشت
                 continue
         z.created_time = tt[max(k, b)]
+        # برای نمودار معاملات: سطح چاک، از کجا (شروع بیس مخالف) و کندل چاک
+        z.choch_level, z.choch_from, z.choch_time = level, tt[a0], tt[k]
         out.append(z)
     out.sort(key=lambda z_: pd.Timestamp(z_.created_time))
     return out
@@ -1268,7 +1274,7 @@ class AccountBook:
         self.reserve = float(reserve)
         self.risk_per_trade = float(risk_per_trade)
         self.session_weights = session_weights or {}
-        self.max_open_total = int(max_open_total)
+        self.max_open_total = int(max_open_total) if max_open_total and max_open_total > 0 else 10 ** 9
         self.open_total = 0
         self.equity_curve = []   # (زمان، اکویتی) بعد از هر معامله‌ی بسته‌شده
 
@@ -1719,6 +1725,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         _L_dist = np.array([z1.distal for z1 in _z1], dtype=float)
         _L_be = np.array([np.searchsorted(m15_t, np.datetime64(pd.Timestamp(z1.base_end), "ns")) for z1 in _z1],
                          dtype=np.int64)
+        _L_z = _z1
         for q1, z1 in enumerate(_z1):        # کندل ۱دقیقه‌ای که چاک در آن بسته شد → بیس‌ها
             j_ = int(np.searchsorted(m15_t, np.datetime64(pd.Timestamp(z1.created_time), "ns")))
             conf_at.setdefault(j_, []).append(q1)
@@ -1824,6 +1831,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 "active":True,"filled":False,"fill_time":None,"cancel":None,
                 "risk": float(risk)}
 
+    _l_bar, _h_bar = [0.0], [0.0]        # کف/سقف کندل ۱۵دقیقه‌ی جاری (برای میان‌بر ltf_step)
+
     def ltf_cancel(p, t_now, key, why):
         p["active"] = False
         p["cancel"] = why
@@ -1836,6 +1845,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         بقیه‌ی همین کندل ۱۵دقیقه روی ۱دقیقه جلو می‌رود. خروجی: پوزیشن باز یا None (بسته شد)."""
         direction = p["z"].direction
         risk = (eff_entry - p["sl"]) if direction == "BUY" else (p["sl"] - eff_entry)
+        if book is not None and book.open_total >= book.max_open_total:
+            ltf_cancel(p, t_bar, "رد_به_خاطر_سقف_پوزیشن_کل_حساب", "لغو: سقف پوزیشن باز کل حساب پر بود")
+            return None
         if risk <= 0:
             ltf_cancel(p, t_bar, "لغو_استاپ_۱دقیقه_کوچک", "لغو: استاپ نامعتبر بعد از تأیید")
             return None
@@ -1852,7 +1864,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         trigger = (eff_entry + MANAGE_TRIGGER_R * risk) if direction == "BUY" else (eff_entry - MANAGE_TRIGGER_R * risk)
         pos = {"ZoneID": p["z"].zone_id, "direction": direction, "eff_entry": float(eff_entry),
                "sl": float(p["sl"]), "tp": float(p["tp"]), "risk": float(risk), "risk_amt": float(risk_amt),
-               "fill_time": fill_t, "test": p["test"], "z": p["z"], "trigger": float(trigger), "managed": False}
+               "fill_time": fill_t, "test": p["test"], "z": p["z"], "trigger": float(trigger), "managed": False,
+               "ltf": p.get("ltf")}
         if in_bar_fill:
             fav = entry_bar_fav(direction, eff_entry, m15_o[j], m15_h[j], m15_l[j], m15_c[j])
             ex = process_pos_candle(pos, m15_h[j], m15_l[j], t_bar, fav=fav)
@@ -1870,11 +1883,15 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         """یک کندل ۱۵دقیقه برای سفارشِ «تأیید ۱دقیقه» روی کندل‌های ۱دقیقه:
         armed (منتظر رسیدن قیمت به بیس) → watch (منتظر چاک ۱دقیقه) → order (اوردر لیمیت) → پوزیشن.
         خروجی: پوزیشن باز یا None."""
+        buy_ = p["z"].direction == "BUY"
+        if p["stage"] == "armed":
+            # میان‌بر: اگر کل همین کندل ۱۵دقیقه به نقطه‌ی ورود نرسیده، کندل‌های ۱دقیقه بررسی نمی‌شوند
+            if (buy_ and _l_bar[0] + spr > p["entry"]) or (not buy_ and _h_bar[0] < p["entry"]):
+                return None
         rng = _m15_range(t_bar)
         if rng is None:
             return None
         j, j1 = rng
-        buy_ = p["z"].direction == "BUY"
         while j < j1:
             st = p["stage"]
             if st == "armed":
@@ -1892,6 +1909,12 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                         continue
                     reasons["تأیید_چاک_۱دقیقه"] += 1
                     log_event(events, pd.Timestamp(m15_t[j]), symbol, p["z"].zone_id, "LTF_CHoCH", "")
+                    _z1c = _L_z[q1]
+                    p["ltf"] = {"reach": pd.Timestamp(m15_t[p["j_reach"]]), "conf": pd.Timestamp(m15_t[j]),
+                                "b0": pd.Timestamp(_z1c.base_start), "b1": pd.Timestamp(_z1c.base_end),
+                                "prox": float(_z1c.proximal), "dist": float(_z1c.distal),
+                                "lvl": float(getattr(_z1c, "choch_level", np.nan)),
+                                "lvl_from": pd.Timestamp(getattr(_z1c, "choch_from", _z1c.base_start))}
                     if ltf_mode == "base":
                         h1 = _L_hi[q1] - _L_lo[q1]
                         if buy_:
@@ -1967,7 +1990,13 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             "ZoneID": pos["ZoneID"],
             "پراکسیمال":z.proximal,"دیستال":z.distal,
             "بیس_شروع":z.base_start,"بیس_پایان":z.base_end,
-            "دوجی_شدو":z.doji_shadow, "هزینه_R": float(cost_r)
+            "دوجی_شدو":z.doji_shadow, "هزینه_R": float(cost_r),
+            "زمان_تأیید_بیس": z.created_time,
+            "سطح_چاک_بیس": float(getattr(z, "choch_level", np.nan)),
+            "چاک_بیس_از": getattr(z, "choch_from", None),
+            "زمان_رسیدن_به_بیس": (pos.get("ltf") or {}).get("reach"),
+            "زمان_چاک_۱دقیقه": (pos.get("ltf") or {}).get("conf"),
+            "_ltf": pos.get("ltf"),
         })
 
         _zset(pos["ZoneID"], "زمان_خروج", exit_time)
@@ -2366,7 +2395,11 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             n_slots = int(n_slots or 0)
         else:
             n_slots = max_orders
-        n_slots = max(0, min(n_slots, max_orders))
+        n_slots = max(0, min(n_slots, max_orders)) if max_orders and max_orders > 0 else n_wanted
+        if ltf_on:
+            # تأیید ۱دقیقه: منتظر ماندن برای رسیدن قیمت/چاک اوردری روی بروکر نیست، پس سقف سفارش
+            # را اشغال نمی‌کند؛ فقط سقف پوزیشن باز کل حساب موقع ورود رعایت می‌شود.
+            n_slots = n_wanted
 
         # سفارش‌هایی که سهمیه‌شان را از دست داده‌اند برداشته می‌شوند (زون سالم می‌ماند)
         for p in live_pending[n_slots:]:
@@ -2381,7 +2414,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         free = max(0, n_slots - min(len(live_pending), n_slots))
         for z, test_no in candidates[:free]:
             # در ربات، وقتی سقف پوزیشن باز کل حساب پر باشد سفارش تازه گذاشته نمی‌شود
-            if book is not None and book.open_total >= book.max_open_total:
+            if book is not None and book.open_total >= book.max_open_total and not ltf_on:
                 reasons["رد_به_خاطر_سقف_پوزیشن_کل_حساب"] += 1
                 continue
             _po = make_order(z, t, test_no)
@@ -2459,6 +2492,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 continue
 
             if ltf_on:
+                _l_bar[0], _h_bar[0] = l, h
                 _pos = ltf_step(p, t)
                 if _pos is not None:
                     new_open_positions.append(_pos)
@@ -2860,7 +2894,11 @@ def portfolio_live_replay(symbol_frames, spreads, entry_off=None, sl_off=None, r
         # سهمیه‌بندی دوری روی خواسته‌ی همه‌ی نمادهای زنده — عین حلقه‌ی range(3) ربات
         alloc = {s: 0 for s in gens}
         total = 0
-        for _round in range(max_per_sym):
+        if max_per_sym <= 0 or max_pending_total <= 0:
+            # بدون سقف: هر نماد هر چند سفارش که بخواهد (سقف هر نماد اگر باشد رعایت می‌شود)
+            for s in gens:
+                alloc[s] = reqs[s]["خواسته"] if max_per_sym <= 0 else min(reqs[s]["خواسته"], max_per_sym)
+        for _round in range(max_per_sym if max_pending_total > 0 else 0):
             for s in order:
                 if s not in gens or total >= max_pending_total:
                     continue
@@ -3415,22 +3453,18 @@ def design_symbol_table(results, book):
     return pd.DataFrame(rows)
 
 
-def stop_cause_table(trades, frames, trend_mode, max_days=None):
+def stop_causes(trades, frames, trend_mode, max_days=None):
     """دلیل هر استاپ کامل (معامله‌ی ضررده که با حدضرر بسته شد) — فقط برای گزارش، نه معامله:
-      «روند ۴ساعته برگشت»: بعد از ورود، روند ۴ساعته خلاف جهت معامله شد پیش از آنکه قیمت به
-          تارگت معامله برسد → روند ۴ساعته اشتباه بود.
-      «بیس ۱۵دقیقه»: روند ۴ساعته سر جایش ماند و قیمت بعد از زدن استاپ به تارگت رسید → جهت
-          درست بود، بیس/نقطه‌ی ورود ۱۵دقیقه نگه نداشت.
+      «روند ۴ساعته»: بعد از ورود، روند ۴ساعته خلاف جهت معامله شد پیش از آنکه قیمت به تارگت برسد.
+      «بیس ۱۵دقیقه»: روند ۴ساعته سر جایش ماند و قیمت بعد از زدن استاپ به تارگت رسید.
       «نامشخص»: تا max_days روز نه روند برگشت نه تارگت خورد.
-    روند ۴ساعته با همان روش همان اجرا (چاک یا چاک+ترندلاین) و از لحظه‌ی بسته شدن کندل حساب می‌شود."""
+    خروجی: (برچسب هر معامله — "" برای غیر استاپ، عمق خلاف جهت برحسب R برای «بیس» یا NaN)."""
     max_days = STOP_CAUSE_DAYS if max_days is None else max_days
-    cols = ["نماد", "تعداد_معامله", "استاپ_کامل", "روند_۴ساعته_برگشت", "٪_روند",
-            "بیس_۱۵دقیقه_(جهت_درست_بود)", "٪_بیس", "نامشخص", "٪_نامشخص",
-            "بیس_عمق_خلاف_جهت_R_(میانه)"]
+    labels = pd.Series("", index=trades.index, dtype=object)
+    depth = pd.Series(np.nan, index=trades.index, dtype=float)
     if trades is None or trades.empty:
-        return pd.DataFrame(columns=cols)
-    win = pd.Timedelta(days=max_days)
-    counts = {}
+        return labels, depth
+    win = np.timedelta64(pd.Timedelta(days=max_days))
     for sym, g in trades.groupby("نماد"):
         if sym not in frames:
             continue
@@ -3446,55 +3480,258 @@ def stop_cause_table(trades, frames, trend_mode, max_days=None):
         zt = pd.to_datetime(zdf["time"]).to_numpy(dtype="datetime64[ns]")
         zh = zdf["high"].to_numpy(dtype=float)
         zl = zdf["low"].to_numpy(dtype=float)
-        c = {"n": len(g), "sl": 0, "trend": 0, "base": 0, "unk": 0, "depth": []}
         lost = g[(pd.to_numeric(g["نتیجه_R"], errors="coerce") < 0)
                  & g["علت_خروج"].astype(str).str.contains("حدضرر")]
-        for _, r in lost.iterrows():
-            c["sl"] += 1
+        for ix, r in lost.iterrows():
             d = 1 if r["جهت"] == "خرید" else -1
             te = np.datetime64(pd.Timestamp(r["زمان_ورود"]), "ns")
             tx = np.datetime64(pd.Timestamp(r["زمان_خروج"]), "ns")
-            tend = te + np.timedelta64(win)
-            # اولین لحظه‌ای که روند ۴ساعته خلاف جهت معامله شد
+            tend = te + win
             a, b = np.searchsorted(known, te), np.searchsorted(known, tend, side="right")
             m = sgn[a:b] == -d
             flip_t = known[a + int(np.argmax(m))] if m.any() else None
-            # اولین کندل ۱۵دقیقه از کندل استاپ به بعد که به تارگت رسید
             a2, b2 = np.searchsorted(zt, tx), np.searchsorted(zt, tend, side="right")
             tp = float(r["حدسود"])
             m2 = (zh[a2:b2] >= tp) if d == 1 else (zl[a2:b2] <= tp)
             tp_t = zt[a2 + int(np.argmax(m2))] if m2.any() else None
             if flip_t is not None and (tp_t is None or flip_t <= tp_t):
-                c["trend"] += 1
+                labels[ix] = "روند ۴ساعته"
             elif tp_t is not None:
-                c["base"] += 1
-                # قیمت پیش از رسیدن به تارگت چقدر خلاف جهت رفت (برحسب R؛ ۱ = همان استاپ)
+                labels[ix] = "بیس ۱۵دقیقه"
                 risk = abs(float(r["ورود"]) - float(r["حدضرر"]))
                 a3, k3 = np.searchsorted(zt, te), a2 + int(np.argmax(m2))
                 if risk > 0 and k3 >= a3:
                     adv = (float(r["ورود"]) - zl[a3:k3 + 1].min()) if d == 1 else (zh[a3:k3 + 1].max() - float(r["ورود"]))
-                    c["depth"].append(adv / risk)
+                    depth[ix] = adv / risk
             else:
-                c["unk"] += 1
-        counts[sym] = c
+                labels[ix] = "نامشخص"
+    return labels, depth
 
-    def row(name, c):
-        pct = (lambda k: round(c[k] / c["sl"] * 100.0, 1) if c["sl"] else 0.0)
-        return {"نماد": name, "تعداد_معامله": c["n"], "استاپ_کامل": c["sl"],
-                "روند_۴ساعته_برگشت": c["trend"], "٪_روند": pct("trend"),
-                "بیس_۱۵دقیقه_(جهت_درست_بود)": c["base"], "٪_بیس": pct("base"),
-                "نامشخص": c["unk"], "٪_نامشخص": pct("unk"),
-                "بیس_عمق_خلاف_جهت_R_(میانه)": round(float(np.median(c["depth"])), 2) if c["depth"] else None}
-    tot = {k: sum(v[k] for v in counts.values()) for k in ("n", "sl", "trend", "base", "unk")}
-    tot["depth"] = [x for v in counts.values() for x in v["depth"]]
-    rows = [row("کل", tot)] + [row(sym, counts[sym]) for sym in sorted(counts)]
+
+def stop_cause_table(trades, frames, trend_mode, max_days=None):
+    """جدول دلیل استاپ‌ها برای هر نماد + ردیف «کل» (از روی stop_causes)."""
+    cols = ["نماد", "تعداد_معامله", "استاپ_کامل", "روند_۴ساعته_برگشت", "٪_روند",
+            "بیس_۱۵دقیقه_(جهت_درست_بود)", "٪_بیس", "نامشخص", "٪_نامشخص",
+            "بیس_عمق_خلاف_جهت_R_(میانه)"]
+    if trades is None or trades.empty:
+        return pd.DataFrame(columns=cols)
+    labels, depth = stop_causes(trades, frames, trend_mode, max_days)
+
+    def row(name, idx):
+        lb = labels[idx]
+        n_sl = int((lb != "").sum())
+        cnt = {k: int((lb == v).sum()) for k, v in (("trend", "روند ۴ساعته"), ("base", "بیس ۱۵دقیقه"),
+                                                     ("unk", "نامشخص"))}
+        pct = (lambda k: round(cnt[k] / n_sl * 100.0, 1) if n_sl else 0.0)
+        dp = depth[idx].dropna()
+        return {"نماد": name, "تعداد_معامله": int(len(idx)), "استاپ_کامل": n_sl,
+                "روند_۴ساعته_برگشت": cnt["trend"], "٪_روند": pct("trend"),
+                "بیس_۱۵دقیقه_(جهت_درست_بود)": cnt["base"], "٪_بیس": pct("base"),
+                "نامشخص": cnt["unk"], "٪_نامشخص": pct("unk"),
+                "بیس_عمق_خلاف_جهت_R_(میانه)": round(float(dp.median()), 2) if len(dp) else None}
+    rows = [row("کل", trades.index)]
+    for sym, g in sorted(trades.groupby("نماد"), key=lambda x: x[0]):
+        rows.append(row(sym, g.index))
     return pd.DataFrame(rows, columns=cols)
 
 
+def _fmt_t(t):
+    try:
+        return "" if t is None or pd.isna(t) else pd.Timestamp(t).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return ""
+
+
+def trades_review_table(name, results, frames, tmode):
+    """همه‌ی معاملات یک اجرا با زمان‌های لازم برای پیدا کردنشان روی چارت متاتریدر (ساعت سرور بروکر).
+    خروجی: (جدول برای اکسل، جدول خام برای نمودارها)"""
+    tr = _design_trades(results)
+    if tr.empty:
+        return tr, tr
+    tr = tr.sort_values("زمان_ورود").reset_index(drop=True)
+    labels, depth = stop_causes(tr, frames, tmode)
+    tr["دلیل_استاپ"] = labels
+    tr["شماره"] = np.arange(1, len(tr) + 1)
+    tr["اجرا"] = name
+    pips = tr["نماد"].map(pip_size)
+    out = pd.DataFrame({
+        "اجرا": tr["اجرا"], "شماره": tr["شماره"], "نماد": tr["نماد"], "جهت": tr["جهت"],
+        "نتیجه_R": tr["نتیجه_R"].astype(float).round(2), "علت_خروج": tr["علت_خروج"],
+        "دلیل_استاپ": tr["دلیل_استاپ"],
+        "شروع_بیس_۱۵دقیقه": tr["بیس_شروع"].map(_fmt_t), "پایان_بیس_۱۵دقیقه": tr["بیس_پایان"].map(_fmt_t),
+        "تأیید_بیس_(کندل_چاک)": tr["زمان_تأیید_بیس"].map(_fmt_t) if "زمان_تأیید_بیس" in tr else "",
+        "پراکسیمال": tr["پراکسیمال"], "دیستال": tr["دیستال"],
+        "سطح_چاک_بیس": tr["سطح_چاک_بیس"] if "سطح_چاک_بیس" in tr else np.nan,
+        "رسیدن_قیمت_به_بیس": tr["زمان_رسیدن_به_بیس"].map(_fmt_t) if "زمان_رسیدن_به_بیس" in tr else "",
+        "چاک_۱دقیقه": tr["زمان_چاک_۱دقیقه"].map(_fmt_t) if "زمان_چاک_۱دقیقه" in tr else "",
+        "زمان_ورود": tr["زمان_ورود"].map(_fmt_t), "ورود": tr["ورود"], "حدضرر": tr["حدضرر"],
+        "حدسود": tr["حدسود"], "زمان_خروج": tr["زمان_خروج"].map(_fmt_t),
+        "استاپ_پیپ": ((tr["ورود"] - tr["حدضرر"]).abs() / pips).round(1),
+    })
+    return out, tr
+
+
+def draw_trade_charts(chart_dir, run_idx, name, raw, frames, max_n=None):
+    """یک عکس برای هر معامله: بالا ۱۵دقیقه (بیس، سطح چاک بیس، ورود/استاپ/تارگت)، پایین ۱دقیقه
+    (رسیدن قیمت به بیس، بیس ۱دقیقه، سطح و لحظه‌ی چاک ۱دقیقه). نوشته‌ها انگلیسی‌اند چون
+    matplotlib حروف فارسی را درست نمی‌چسباند."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Rectangle
+    except ImportError:
+        print("   ⚠️ برای نمودار معاملات پکیج matplotlib لازم است. یک بار در CMD بزن:  pip install matplotlib")
+        return 0
+    if raw is None or raw.empty:
+        return 0
+    max_n = TRADE_CHARTS_MAX if max_n is None else max_n
+    sub = os.path.join(chart_dir, f"{run_idx}_{name}")
+    os.makedirs(sub, exist_ok=True)
+    reason_en = {"حدسود": "TP", "حدضرر": "SL", "سربه‌سر (ریسک‌فری)": "BE", "پایان دیتا": "end of data",
+                 "هر دو در یک کندل: حدضرر": "SL (TP+SL same bar)"}
+    cause_en = {"روند ۴ساعته": "H4 trend turned", "بیس ۱۵دقیقه": "15m base failed (trend held)",
+                "نامشخص": "unclear", "": "-"}
+
+    def candles(ax, df):
+        x = np.arange(len(df))
+        o, h, l, c = (df[k].to_numpy(dtype=float) for k in ("open", "high", "low", "close"))
+        up = c >= o
+        ax.vlines(x, l, h, color="#555555", linewidth=0.6, zorder=2)
+        ax.bar(x[up], (c - o)[up], bottom=o[up], width=0.65, color="#26a69a", zorder=3)
+        ax.bar(x[~up], (o - c)[~up], bottom=c[~up], width=0.65, color="#ef5350", zorder=3)
+        step = max(1, len(df) // 8)
+        ax.set_xticks(x[::step])
+        ax.set_xticklabels([pd.Timestamp(t).strftime("%m-%d %H:%M") for t in df["time"].iloc[::step]],
+                           fontsize=7)
+        ax.set_xlim(-1, len(df))
+        ax.grid(alpha=0.2)
+
+    def xi(df, t):
+        if t is None or (not isinstance(t, pd.Timestamp) and pd.isna(t)):
+            return None
+        return int(np.searchsorted(df["time"].to_numpy(dtype="datetime64[ns]"),
+                                   np.datetime64(pd.Timestamp(t), "ns")))
+
+    n_done = 0
+    for _, r in raw.head(max_n).iterrows():
+        sym = r["نماد"]
+        if sym not in frames:
+            continue
+        z15, m1 = frames[sym][0], frames[sym][3]
+        t_in, t_out = pd.Timestamp(r["زمان_ورود"]), pd.Timestamp(r["زمان_خروج"])
+        t_b0 = pd.Timestamp(r["بیس_شروع"])
+        t_from = pd.Timestamp(r["چاک_بیس_از"]) if r.get("چاک_بیس_از") is not None and not pd.isna(r.get("چاک_بیس_از")) else t_b0
+        tt = z15["time"].to_numpy(dtype="datetime64[ns]")
+        i0 = int(np.searchsorted(tt, np.datetime64(min(t_b0, t_from), "ns"))) - 25
+        i1 = int(np.searchsorted(tt, np.datetime64(t_out, "ns"))) + 25
+        ie = int(np.searchsorted(tt, np.datetime64(t_in, "ns")))
+        if i1 - i0 > 500:
+            i0, i1 = max(i0, ie - 300), min(i1, ie + 200)
+        w = z15.iloc[max(0, i0):min(len(z15), i1)].reset_index(drop=True)
+        if w.empty:
+            continue
+        ltf = r.get("_ltf") if isinstance(r.get("_ltf"), dict) else None
+        has_m1 = ltf is not None and m1 is not None and len(m1)
+        fig, axes = plt.subplots(2 if has_m1 else 1, 1, figsize=(15, 9 if has_m1 else 5.5),
+                                 gridspec_kw={"height_ratios": [3, 2]} if has_m1 else None)
+        ax = axes[0] if has_m1 else axes
+        candles(ax, w)
+        buy = r["جهت"] == "خرید"
+        zc = "#2e7d32" if buy else "#c62828"
+        xb0, xin, xout = xi(w, t_b0), xi(w, t_in), xi(w, t_out)
+        lo_, hi_ = min(r["پراکسیمال"], r["دیستال"]), max(r["پراکسیمال"], r["دیستال"])
+        ax.add_patch(Rectangle((xb0 - 0.5, lo_), max(1, xout - xb0 + 1), hi_ - lo_, color=zc, alpha=0.15, zorder=1))
+        lvl = r.get("سطح_چاک_بیس")
+        if lvl is not None and np.isfinite(lvl):
+            xf, xc = xi(w, t_from), xi(w, r.get("زمان_تأیید_بیس"))
+            ax.hlines(lvl, xf, xc, colors="orange", linestyles=":", linewidth=1.6, label="15m CHoCH level", zorder=4)
+        xl = max(xout, xin + 6)          # حتی اگر ورود و خروج در یک کندل باشد خط‌ها دیده شوند
+        ax.hlines(r["ورود"], xin, xl, colors="#1565c0", linewidth=1.3, label="entry", zorder=4)
+        ax.hlines(r["حدضرر"], xin, xl, colors="#c62828", linewidth=1.3, label="SL", zorder=4)
+        ax.hlines(r["حدسود"], xin, xl, colors="#2e7d32", linewidth=1.3, label="TP", zorder=4)
+        ax.plot([xin], [r["ورود"]], marker="^" if r["جهت"] == "خرید" else "v", color="#1565c0", markersize=9, zorder=5)
+        if ltf:
+            for key, col, lab in (("reach", "grey", "price reached base"), ("conf", "purple", "1m CHoCH")):
+                xv = xi(w, ltf.get(key))
+                if xv is not None and 0 <= xv < len(w):
+                    ax.axvline(xv, color=col, linestyle="--", linewidth=1, label=lab)
+        ax.axvline(xin, color="#1565c0", linewidth=0.8)
+        ax.axvline(min(xout, len(w) - 1), color="black", linewidth=0.8)
+        res = float(r["نتیجه_R"])
+        ax.set_title(f"#{int(r['شماره'])} {sym} {'BUY' if buy else 'SELL'} | {res:+.2f}R | "
+                     f"exit: {reason_en.get(str(r['علت_خروج']), str(r['علت_خروج']))} | "
+                     f"stop cause: {cause_en.get(r.get('دلیل_استاپ', ''), '-')} | entry {t_in:%Y-%m-%d %H:%M}",
+                     fontsize=10)
+        ax.legend(loc="upper left", fontsize=7)
+        if has_m1:
+            ax2 = axes[1]
+            mt = m1["time"].to_numpy(dtype="datetime64[ns]")
+            ta = min(ltf["reach"], ltf["b0"], ltf.get("lvl_from") or ltf["b0"]) - pd.Timedelta(minutes=20)
+            tb = ltf["conf"] + pd.Timedelta(minutes=60)
+            j0 = int(np.searchsorted(mt, np.datetime64(ta, "ns")))
+            j1 = int(np.searchsorted(mt, np.datetime64(tb, "ns")))
+            if j1 - j0 > 400:
+                j0 = max(j0, int(np.searchsorted(mt, np.datetime64(ltf["conf"], "ns"))) - 300)
+                j1 = min(j1, j0 + 400)
+            w1 = m1.iloc[j0:j1].reset_index(drop=True)
+            if len(w1):
+                candles(ax2, w1)
+                ax2.axhspan(lo_, hi_, color=zc, alpha=0.08)
+                xb, xc1 = xi(w1, ltf["b0"]), xi(w1, ltf["conf"])
+                l1, h1 = min(ltf["prox"], ltf["dist"]), max(ltf["prox"], ltf["dist"])
+                ax2.add_patch(Rectangle((xb - 0.5, l1), max(1, xc1 - xb + 1), h1 - l1, color=zc, alpha=0.3, zorder=1,
+                                        label="1m base"))
+                if np.isfinite(ltf.get("lvl", np.nan)):
+                    ax2.hlines(ltf["lvl"], xi(w1, ltf.get("lvl_from")), xc1, colors="orange", linestyles=":",
+                               linewidth=1.6, label="1m CHoCH level")
+                for key, col, lab in (("reach", "grey", "price reached 15m base"), ("conf", "purple", "1m CHoCH")):
+                    xv = xi(w1, ltf.get(key))
+                    if xv is not None and 0 <= xv < len(w1):
+                        ax2.axvline(xv, color=col, linestyle="--", linewidth=1, label=lab)
+                ax2.axhline(r["ورود"], color="#1565c0", linewidth=1, label="entry")
+                ax2.set_title("1 minute: 15m base (light band), 1m base, 1m CHoCH", fontsize=9)
+                ax2.legend(loc="upper left", fontsize=7)
+        fig.tight_layout()
+        fn = f"{int(r['شماره']):03d}_{sym}_{t_in:%Y%m%d-%H%M}_{'WIN' if res > 0 else 'LOSS'}.png"
+        fig.savefig(os.path.join(sub, fn), dpi=90)
+        plt.close(fig)
+        n_done += 1
+    return n_done
+
+
+def session_results_table(runs):
+    """برد، باخت، سود و ضرر هر سشن (بر اساس ساعت ورود، تبدیل‌شده به UTC با SESSION_HOUR_SHIFT)."""
+    rows = []
+    risk_pct = LIVE_RISK_PER_TRADE * 100.0
+    for name, results, _book, _tm in runs:
+        tr = _design_trades(results)
+        if tr.empty:
+            continue
+        hrs = (pd.to_datetime(tr["زمان_ورود"]) + pd.Timedelta(hours=SESSION_HOUR_SHIFT)).dt.hour
+        ses = hrs.map(hour_to_session)
+        R = tr["نتیجه_R"].astype(float)
+        for a, b, sname in list(SESSION_RANGES) + [(None, None, "کل")]:
+            r = R[ses == sname] if a is not None else R
+            win, loss = r[r > 0], r[r <= 0]
+            rows.append({
+                "اجرا": name, "سشن": sname if a is None else f"{sname} ({a:02d}-{b:02d} UTC)",
+                "تعداد": int(len(r)), "برد": int(len(win)), "باخت": int(len(loss)),
+                "درصد_برد": round(len(win) / len(r) * 100.0, 1) if len(r) else 0.0,
+                "سود_R": round(float(win.sum()), 2), "ضرر_R": round(float(loss.sum()), 2),
+                "خالص_R": round(float(r.sum()), 2),
+                "میانگین_R": round(float(r.mean()), 3) if len(r) else 0.0,
+                "فاکتور_سود": _pf(r) if len(r) else 0.0,
+                "خالص_تقریبی٪_حساب": round(float(r.sum()) * risk_pct, 2),
+            })
+        rows.append({})
+    return pd.DataFrame(rows)
+
+
 def write_simple_excel(sw, runs, frames):
-    """دو سربرگ: «کلی» (هر اجرا: ردیف کل + نمادها) و «دلیل_استاپ‌ها».
-    runs: [(اسم اجرا, results, book, trend_mode)]"""
-    parts, causes = [], []
+    """سربرگ‌ها: «کلی» (هر اجرا: ردیف کل + نمادها)، «دلیل_استاپ‌ها» و «معاملات».
+    runs: [(اسم اجرا, results, book, trend_mode)] — خروجی: جدول معاملات هر اجرا (برای نمودارها)"""
+    parts, causes, reviews = [], [], []
     for name, results, book, tmode in runs:
         tbl = design_symbol_table(results, book)
         tbl = pd.concat([tbl[tbl["نماد"] == "کل"], tbl[tbl["نماد"] != "کل"]], ignore_index=True)
@@ -3539,6 +3776,20 @@ def write_simple_excel(sw, runs, frames):
         "(نزدیک ۱ تا ۱.۵ = استاپ فقط کمی کوچک بود؛ خیلی بیشتر = خود بیس اشتباه بود).",
     ]})
     notes.to_excel(sw, sheet_name="دلیل_استاپ‌ها", index=False, startrow=len(cdf) + 2)
+    # همه‌ی معاملات با زمان‌ها (ساعت سرور بروکر، همان ساعت چارت متاتریدر)
+    for name, results, _book, tmode in runs:
+        reviews.append((name,) + tuple(trades_review_table(name, results, frames, tmode)))
+    sdf = session_results_table(runs)
+    if not sdf.empty:
+        sdf.to_excel(sw, sheet_name="سشن‌ها", index=False)
+        pd.DataFrame({"توضیح": [
+            f"سشن از روی ساعت ورود معامله؛ ساعت دیتا {SESSION_HOUR_SHIFT:+d} ساعت = UTC (SESSION_HOUR_SHIFT).",
+            f"خالص_تقریبی٪_حساب = خالص R × ریسک هر معامله ({LIVE_RISK_PER_TRADE * 100:g}٪) — بدون اثر مرکب.",
+        ]}).to_excel(sw, sheet_name="سشن‌ها", index=False, startrow=len(sdf) + 2)
+    tabs = [t for _, t, _raw in reviews if t is not None and not t.empty]
+    if tabs:
+        pd.concat(tabs, ignore_index=True).to_excel(sw, sheet_name="معاملات", index=False)
+    return reviews
 
 
 def design_compare_row(name, results, book, mid_t, desc):
@@ -3871,9 +4122,10 @@ def main():
     live_book = None
     live_alloc = None
     if LIVE_MODE:
+        _cap = lambda v: str(v) if v and v > 0 else "بی‌سقف"
         print(f"\n🔗 حالت «عین لایو»: {len(frames)} نماد هم‌زمان روی یک حساب | "
-              f"سقف {LIVE_MAX_PENDING_TOTAL} سفارش و {LIVE_MAX_OPEN_TOTAL} پوزیشن در کل حساب، "
-              f"هر نماد حداکثر {LIVE_MAX_PENDING_PER_SYMBOL} سفارش")
+              f"سفارش کل حساب: {_cap(LIVE_MAX_PENDING_TOTAL)} | پوزیشن باز کل حساب: {_cap(LIVE_MAX_OPEN_TOTAL)} | "
+              f"سفارش هر نماد: {_cap(LIVE_MAX_PENDING_PER_SYMBOL)}")
         if LTF_MODE and all(fr[3] is None for fr in frames.values()):
             raise ValueError("دیتای ۱دقیقه داخل ZIPها نیست (فایل -1.csv) ولی بک‌تست با تأیید ۱دقیقه است. "
                              "export_data را با تایم M1 اجرا کن و ZIPهای تازه را در پوشه‌ی 0 بگذار.")
@@ -4334,9 +4586,10 @@ def main():
                 "حداکثر_افت٪": "افت_سهم_این_نماد٪",
             })
 
+        _reviews = None
         with pd.ExcelWriter(summary_path, engine="openpyxl") as sw:
             if SIMPLE_EXCEL and simple_runs:
-                write_simple_excel(sw, simple_runs, frames)
+                _reviews = write_simple_excel(sw, simple_runs, frames)
             else:
                 summary_out.to_excel(sw, sheet_name="خلاصه", index=False)
             # آزمایش‌های طراحی: یک سربرگ مقایسه + یک سربرگ برای هر آزمایش
@@ -4398,6 +4651,17 @@ def main():
                     _w = max((len(str(_c.value)) for _c in _col[:300] if _c.value is not None), default=8)
                     _ws.column_dimensions[_col[0].column_letter].width = min(max(10, _w * 1.1), 70)
 
+        # نمودار هر معامله (بعد از ذخیره‌ی اکسل، تا اگر مشکلی پیش آمد اکسل از دست نرود)
+        if SIMPLE_EXCEL and TRADE_CHARTS and simple_runs and _reviews:
+            chart_dir = os.path.join(outdir, "نمودار_معاملات")
+            print(f"\n🖼️ نمودار معاملات در «{chart_dir}» ...", flush=True)
+            for _k, (_nm, _tb, _raw) in enumerate(_reviews, start=1):
+                try:
+                    _n = draw_trade_charts(chart_dir, _k, _nm, _raw, frames)
+                    print(f"   {_nm}: {_n} نمودار")
+                except Exception as e:
+                    print(f"   ⚠️ نمودار «{_nm}» ساخته نشد: {e}")
+
         # --- خروجی نهایی (جزئیات کامل) — فقط اگر WRITE_DETAILS روشن باشد ---
         if WRITE_DETAILS:
             with pd.ExcelWriter(detailed_path, engine="openpyxl") as writer:
@@ -4416,7 +4680,9 @@ def main():
                     ddf.to_excel(writer, sheet_name=safe_name, index=False)
             print("جزئیات_حرفه‌ای.xlsx ساخته شد ✅")
     except Exception as e:
+        import traceback
         print("⚠️ ساخت فایل خروجی ناموفق بود:", str(e))
+        traceback.print_exc()
 
     print("تمام شد ✅")
     print("خلاصه_نتایج.xlsx ساخته شد ✅ |", summary_path)
