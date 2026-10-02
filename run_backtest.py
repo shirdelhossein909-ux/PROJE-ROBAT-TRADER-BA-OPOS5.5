@@ -41,6 +41,14 @@ ONLY_SYMBOLS = ["XAUUSD"]  # خالی = همه‌ی نمادهای پوشه‌ی
 BASE_MAX_CANDLES = 6       # بیس: ۱ تا ۶ کندل که بدنه‌شان حداکثر نصف طول کندل است
 LEGOUT_CLEAR_BARS = 3      # کنسالیدیشن اوی: تا ۳ کندل بعد از بیس یک کندل کامل بیرون از بیس (سایه هم به پراکسیمال نخورد)
 MIN_LEGOUT_BODY_ATR = 1.0  # لگ‌اوت قوی: بدنه‌ی کندل خروج ≥ این ضریب × ATR(14)
+# لگ‌اوت ای‌آر‌سی (کندل بزرگ با بدنه‌ی پر — برای معامله‌ی خلاف روند ۴ساعته): بدنه ≥ ۷۵٪ کل کندل و ≥ ۱.۵×ATR
+ERC_BODY_PCT = 0.75
+ERC_BODY_ATR = 1.5
+# نوع بیس: کندل ورود = اولین کندلِ غیربیس سمت چپ بیس (بدنه > نصف کندل) — صعودی = رلی، نزولی = دراپ.
+#   دیمند: رلی بیس رلی (سی‌پی = ادامه‌دهنده) یا دراپ بیس رلی (برگشتی)
+#   سوپلای: دراپ بیس دراپ (سی‌پی) یا رلی بیس دراپ (برگشتی)
+# بیس اکسترنال (شروع‌کننده‌ی لگ): کف بیس و کندل لگ‌اوتش (برای دیمند؛ سقف برای سوپلای) پایین‌تر از ۳ کندل قبل و
+# ۳ کندل بعد باشد — همان تعریف کف/سقف ساختار.
 # تأیید چاک: کلوز لگ‌اوت پشت سقف/کفی که «بیس مخالف خودش» ساخته (آخرین بیس مخالفِ نشکسته با کنسالیدیشن
 # اوی)، پیش از برگشت قیمت به بیس. بیس از بسته شدن کندل چاک قابل معامله است.
 
@@ -87,18 +95,19 @@ SPREAD_TABLE = {
 MAIN_RUN = "تأیید ۱دقیقه + ورود روی بیس ۱۵دقیقه — فقط تست اول"
 EXTRA_RUNS = {
     # نام اجرا: (تنظیمات، توضیح) — اجرایی را که نمی‌خواهی با # غیرفعال کن
-    "زون_مخالف_۴ساعته_بدون_اوی": ({"htf_opp_no_oe": True},
-        "مثل اجرای اصلی، ولی همه‌ی بیس‌های ۴ساعته‌ی مخالف (حتی بدون کنسالیدیشن اوی) جلوی معامله را می‌گیرند"),
-    "لگ‌اوت_بدون_شرط_قدرت": ({"legout_atr": 0.0},
-        "مثل اجرای اصلی، ولی بیس ۱۵دقیقه شرط «لگ‌اوت قوی» ندارد (فقط کنسالیدیشن اوی و تأیید چاک)"),
-    "لگ‌اوت_نصف": ({"legout_atr": 0.5},
-        "مثل اجرای اصلی، ولی لگ‌اوت قوی = بدنه‌ی کندل خروج دست‌کم نصفِ میانگین اندازه‌ی کندل‌ها (به‌جای یک برابر)"),
     "روند_۴ساعته_برگشت_لغو_نشود": ({"keep_on_htf_flip": True},
         "مثل اجرای اصلی، ولی اگر روند ۴ساعته پیش از ورود برگردد اوردر لغو نمی‌شود (فقط برگشت روند ۱۵دقیقه لغو می‌کند)"),
-    "خلاف_روند_۴ساعته_با_شرط": ({"counter_htf": True},
-        "روند ۴ساعته لازم نیست هم‌جهت باشد (روند ۱۵دقیقه لازم است). معامله‌ی خلاف روند ۴ساعته فقط وقتی که "
-        "قیمت از بیس ۴ساعته‌ی هم‌جهت روند ۴ساعته نمی‌آید (مثلاً در روند صعودی ۴ساعته، اگر قیمت از دیمند ۴ساعته "
-        "بلند شده، سل نه)"),
+    "روند_۱۵دقیقه_فقط_موقع_تأیید": ({"trend15_at_confirm": True},
+        "روند ۱۵دقیقه فقط وقتی بیس تأیید می‌شود باید هم‌جهت باشد (برگشتنش بعد از آن اوردر را لغو نمی‌کند)؛ "
+        "موقع رسیدن قیمت، چاک ۱دقیقه تأیید می‌کند. روی سی‌پی‌ها (رلی بیس رلی، دراپ بیس دراپ) معامله نمی‌شود. "
+        "روند ۴ساعته لازم است و برگشتنش پیش از ورود لغو می‌کند"),
+    "روند_۱۵دقیقه_موقع_تأیید_با_اکسترنال": ({"trend15_at_confirm": True, "keep_external": True},
+        "مثل قبلی، ولی اگر روند ۴ساعته پیش از ورود برگردد، بیس‌های اکسترنال (شروع‌کننده‌ی لگ) لغو نمی‌شوند"),
+    "خلاف_روند_۴ساعته_سخت‌گیرانه": ({"counter_htf": True},
+        "روند ۴ساعته لازم نیست (روند ۱۵دقیقه تا رسیدن قیمت لازم است). معامله‌ی خلاف روند ۴ساعته فقط روی بیس "
+        "برگشتی (نه سی‌پی) با لگ‌اوت ای‌آر‌سی، و نه وقتی قیمت از بیس ۴ساعته‌ی هم‌جهت روند ۴ساعته می‌آید"),
+    "ورود_بدون_تأیید_۱دقیقه": ({"direct": True},
+        "مثل اجرای اصلی، ولی بدون چاک ۱دقیقه: اوردر لیمیت مستقیم روی بیس ۱۵دقیقه"),
 }
 
 # ---- خروجی ----
@@ -412,6 +421,29 @@ def build_zones(df, max_base_len, atr_s, legout_clear=None, weak_out=None):
     body_max = np.maximum(o, c)
     body_min = np.minimum(o, c)
 
+    sn = STRUCT_SWING_N
+
+    def describe(z, i, j, direction, base_low, base_high):
+        """نوع بیس، لگ‌اوت ای‌آر‌سی و اکسترنال بودن (توضیح بالای فایل)"""
+        kk = i - 1
+        while kk >= max(0, i - 20) and not is_strong[kk]:
+            kk -= 1
+        leg_in = ("R" if c[kk] > o[kk] else "D") if (kk >= 0 and is_strong[kk]) else None
+        z.kind = ({"R": "RBR", "D": "DBR"} if direction == "BUY" else {"D": "DBD", "R": "RBD"}).get(leg_in, "?")
+        z.cont = z.kind in ("RBR", "DBD")
+        z.erc = bool(ratio[j] >= ERC_BODY_PCT and np.isfinite(atr_a[j]) and atr_a[j] > 0
+                     and body[j] >= ERC_BODY_ATR * atr_a[j])
+        if i < sn or j + 1 + sn > n:
+            z.external = False
+        elif direction == "BUY":
+            low = min(base_low, l[j])
+            z.external = bool(low < l[i - sn:i].min() and low < l[j + 1:j + 1 + sn].min())
+        else:
+            high = max(base_high, h[j])
+            z.external = bool(high > h[i - sn:i].max() and high > h[j + 1:j + 1 + sn].max())
+        z.born_time = z.created_time
+        return z
+
     zones = []
     i = 0
     while i < n - 3:
@@ -446,9 +478,11 @@ def build_zones(df, max_base_len, atr_s, legout_clear=None, weak_out=None):
                         break
                 if born is None:
                     if weak_out is not None:
-                        weak_out.append(Zone(direction, proximal, distal, times[j], times[i], times[j - 1]))
+                        weak_out.append(describe(Zone(direction, proximal, distal, times[j], times[i], times[j - 1]),
+                                                 i, j, direction, base_low, base_high))
                     break
-            z = Zone(direction, proximal, distal, times[born], times[i], times[j - 1])
+            z = describe(Zone(direction, proximal, distal, times[born], times[i], times[j - 1]),
+                         i, j, direction, base_low, base_high)
             atr_j = atr_a[j] if j < len(atr_a) else np.nan
             z.conf_body_atr = float(body[j] / atr_j) if (np.isfinite(atr_j) and atr_j > 0) else 0.0
             made = (L, z)
@@ -535,6 +569,7 @@ def choch_confirm_zones(zones, df, min_body_atr=0.0, weak=None, cluster_gap_atr=
             bisect.insort(alive[bool(buy[k_])], (int(be[k_]), k_))
             p_ins += 1
         if min_body_atr > 0 and z.conf_body_atr < min_body_atr:
+            z.drop = "weak"                                              # لگ‌اوت ضعیف
             continue
         lst = alive[not buy[q]]
 
@@ -555,6 +590,7 @@ def choch_confirm_zones(zones, df, min_body_atr=0.0, weak=None, cluster_gap_atr=
                 break
             j -= 1
         if opp < 0:
+            z.drop = "no_opp"                                            # بیس مخالفی برای چاک نبود
             continue
         # بیس‌های مخالفِ چسبیده به آن (قدیمی‌ترها) هم جزو همان بیس‌اند
         a0 = int(bs[opp])
@@ -589,11 +625,13 @@ def choch_confirm_zones(zones, df, min_body_atr=0.0, weak=None, cluster_gap_atr=
             level = float(lo[a0:s0].min())                              # کفِ دورترین بیس مخالف
         k = first_beyond(int(be[q]) + 1, level, bool(buy[q]))           # کلوز بادی پشت سطح = چاک
         if k >= N:
+            z.drop = "never"                                             # هیچ‌وقت پشت سطح بسته نشد
             continue
         b = int(born[q])
         if k > b:
             touched = (lo[b + 1:k + 1].min() <= zhi[q]) if buy[q] else (hi[b + 1:k + 1].max() >= zlo[q])
             if touched:                                                  # قیمت پیش از چاک به بیس برگشت
+                z.drop = "returned"
                 continue
         z.created_time = tt[max(k, b)]
         # برای نمودار معاملات: سطح چاک، از کجا (شروع بیس مخالف) و کندل چاک
@@ -674,9 +712,10 @@ class AccountBook:
 # شمارنده‌های هر اجرا (برای قیف و جدول «کلی»)
 COUNT_KEYS = ("reach", "choch1", "filled", "market", "f_all", "f_oe", "f_strong", "f_choch", "f_dedup", "f_ready")
 # دلیل آماده‌نشدن بیس (برای قیف)
-_BLOCK_CODE = {"trend4": 1, "inside": 2, "near": 3, "cp": 4, "trend15": 5, "trend_both": 6, "origin": 7}
+_BLOCK_CODE = {"trend4": 1, "inside": 2, "near": 3, "cp": 4, "trend15": 5, "trend_both": 6, "origin": 7,
+               "cont": 8, "erc": 9, "conf15": 10}
 _LAST_FATE = {0: "n_dead", 1: "n_trend4", 2: "n_inside", 3: "n_near", 4: "n_cp", 5: "n_trend15",
-              6: "n_trend_both", 7: "n_origin"}
+              6: "n_trend_both", 7: "n_origin", 8: "n_cont", 9: "n_erc", 10: "n_conf15"}
 
 
 def _symbol_metrics(symbol, trades, equity, max_dd, spread_ref):
@@ -703,15 +742,17 @@ _M1_CACHE = {}
 
 
 def backtest_symbol(symbol, df15, df4, m1, spread, book,
-                    htf_opp_no_oe=False, legout_atr=None, counter_htf=False, keep_on_htf_flip=False,
-                    live_from=None):
+                    counter_htf=False, keep_on_htf_flip=False,
+                    trend15_at_confirm=False, keep_external=False, direct=False, live_from=None):
     """موتور استراتژی برای یک نماد (generator): سر هر کندل ۱۵دقیقه زمانش را yield می‌کند تا همه‌ی نمادها
     هم‌قدم روی یک حساب جلو بروند. خروجی: (کارنامه، شمارنده‌ها، جدول معاملات)
 
-    htf_opp_no_oe: همه‌ی بیس‌های ۴ساعته‌ی مخالف (حتی بدون کنسالیدیشن اوی) جلوی معامله را می‌گیرند
-    legout_atr: ضریب لگ‌اوت قوی بیس ۱۵دقیقه به‌جای MIN_LEGOUT_BODY_ATR
-    counter_htf: روند ۴ساعته لازم نیست؛ خلاف روند ۴ساعته فقط اگر قیمت از بیس ۴ساعته‌ی هم‌جهت آن روند نمی‌آید
+    counter_htf: روند ۴ساعته لازم نیست؛ خلاف روند ۴ساعته فقط روی بیس برگشتی (نه سی‌پی) با لگ‌اوت ای‌آر‌سی و اگر
+                 قیمت از بیس ۴ساعته‌ی هم‌جهت روند ۴ساعته نمی‌آید
     keep_on_htf_flip: برگشت روند ۴ساعته پیش از ورود اوردر را لغو نمی‌کند (فقط برگشت روند ۱۵دقیقه)
+    trend15_at_confirm: روند ۱۵دقیقه فقط موقع تأیید بیس لازم است؛ سی‌پی‌ها معامله نمی‌شوند
+    keep_external: (با trend15_at_confirm) برگشت روند ۴ساعته اوردر بیس اکسترنال را لغو نمی‌کند
+    direct: بدون چاک ۱دقیقه — اوردر لیمیت مستقیم روی بیس ۱۵دقیقه
     live_from: حالت ربات لایو (live_state) — معامله از این زمان تا انتهای دیتا و خروجی = وضعیت همین الان"""
     bt_start = BACKTEST_START if live_from is None else pd.Timestamp(live_from)
     bt_end = BACKTEST_END if live_from is None else None
@@ -748,18 +789,35 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     span4 = _span(df4, pd.Timedelta(hours=4))
 
     # ---------- بیس‌های ۱۵دقیقه: کنسالیدیشن اوی → لگ‌اوت قوی + تأیید چاک → حذف هم‌پوشان‌ها ----------
-    lo_atr = MIN_LEGOUT_BODY_ATR if legout_atr is None else float(legout_atr)
     weak15 = []
     raw = build_zones(df15, BASE_MAX_CANDLES, df15["atr"], weak_out=weak15)
     # قیف: فقط بیس‌هایی که در بازه‌ی معامله متولد شده‌اند
     p0 = pd.Timestamp(bt_start)
     p1 = pd.Timestamp(bt_end) if bt_end is not None else pd.Timestamp.max
     in_p = lambda t_: p0 <= pd.Timestamp(t_) <= p1
-    counts["f_oe"] = sum(in_p(z.created_time) for z in raw)
-    counts["f_strong"] = sum(in_p(z.created_time) for z in raw if z.conf_body_atr >= lo_atr)
-    counts["f_all"] = counts["f_oe"] + sum(in_p(z.base_end) for z in weak15)
-    raw = choch_confirm_zones(raw, df15, min_body_atr=lo_atr, cluster_gap_atr=0.0)   # بیس‌های چسبیده فقط ۱دقیقه
-    counts["f_choch"] = sum(in_p(z.created_time) for z in raw)
+    period_oe = [z for z in raw if in_p(z.born_time)]
+    period_weak = [z for z in weak15 if in_p(z.base_end)]
+    raw = choch_confirm_zones(raw, df15, min_body_atr=MIN_LEGOUT_BODY_ATR, cluster_gap_atr=0.0)   # بیس‌های چسبیده فقط ۱دقیقه
+    counts["f_all"] = len(period_oe) + len(period_weak)
+    counts["f_oe"] = len(period_oe)
+    counts["f_strong"] = sum(getattr(z, "drop", None) != "weak" for z in period_oe)
+    counts["f_choch"] = sum(getattr(z, "drop", None) is None for z in period_oe)
+
+    def count_type(kind, stage):
+        key = f"ty|{kind}|{stage}"
+        counts[key] = counts.get(key, 0) + 1
+
+    for z in period_weak:                      # قیف بر اساس نوع بیس
+        count_type(z.kind, "all")
+        count_type(z.kind, "no_oe")
+    for z in period_oe:
+        count_type(z.kind, "all")
+        count_type(z.kind, getattr(z, "drop", None) or "valid")
+        if getattr(z, "drop", None) is None:
+            if z.external:
+                count_type(z.kind, "external")
+            if z.erc:
+                count_type(z.kind, "erc")
     zones = dedup_zones_pit(raw, span15)
     # شناسه‌ی پایدار هر بیس (ربات لایو سفارش‌ها را با همین شناسه در کامنت سفارش پیدا می‌کند)
     seen = {}
@@ -795,9 +853,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
 
     hz_from = None
     if len(zones4):
-        opp4 = (dedup_zones_pit(build_zones(df4, BASE_MAX_CANDLES, df4["atr"], legout_clear=0), span4)
-                if htf_opp_no_oe else zones4)
-        hz_from, hz_until, hz_lo, hz_hi, hz_buy = _htf_arrays(opp4)
+        hz_from, hz_until, hz_lo, hz_hi, hz_buy = _htf_arrays(zones4)
         hz_f_ns, hz_u_ns = hz_from.astype(np.int64), hz_until.astype(np.int64)
 
     def htf_zone_block(direction, price, t_now):
@@ -919,13 +975,12 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
                                []).append(q1)
         if live_from is None:            # بیس‌های ۱دقیقه در همه‌ی اجراها یکی‌اند؛ یک بار ساخته می‌شوند
             _M1_CACHE[symbol] = (key1, (z1, L_buy, L_lo, L_hi, L_be, conf_at))
-    span15_ns = np.timedelta64(span15.value, "ns")
 
     def m1_range(t_bar):
         """کندل‌های ۱دقیقه‌ی داخل یک کندل ۱۵دقیقه → (i0, i1) یا None"""
-        t0 = t_bar.to_datetime64()
-        i0 = int(np.searchsorted(m1_t, t0, side="left"))
-        i1 = int(np.searchsorted(m1_t, t0 + span15_ns, side="left"))
+        t0 = t_bar.value
+        i0 = int(np.searchsorted(m1_t_ns, t0, side="left"))
+        i1 = int(np.searchsorted(m1_t_ns, t0 + span15.value, side="left"))
         return (i0, i1) if i1 > i0 else None
 
     # ---------- پوزیشن‌ها ----------
@@ -987,16 +1042,18 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         equity += pos["risk_amt"] * float(result_r)
         peak = max(peak, equity)
         max_dd = max(max_dd, (peak - equity) / peak if peak > 0 else 0.0)
-        z, ltf = pos["z"], pos["ltf"]
+        z, ltf = pos["z"], pos["ltf"] or {}
         trades.append({
             "نماد": symbol, "جهت": "خرید" if buy_ else "فروش",
             "زمان_ورود": pos["fill_time"], "ورود": pos["eff_entry"], "حدضرر": pos["sl"], "حدسود": pos["tp"],
             "زمان_خروج": exit_time, "قیمت_خروج": float(exit_price), "نتیجه_R": float(result_r),
             "علت_خروج": reason, "ZoneID": z.zone_id, "پراکسیمال": z.proximal, "دیستال": z.distal,
+            "نوع_بیس": z.kind, "اکسترنال": z.external, "ای‌آر‌سی": z.erc,
             "بیس_شروع": z.base_start, "بیس_پایان": z.base_end, "هزینه_R": float(cost_r),
             "زمان_تأیید_بیس": z.created_time, "سطح_چاک_بیس": float(getattr(z, "choch_level", np.nan)),
             "چاک_بیس_از": getattr(z, "choch_from", None),
-            "زمان_رسیدن_به_بیس": ltf["reach"], "زمان_چاک_۱دقیقه": ltf["conf"], "_ltf": ltf,
+            "زمان_رسیدن_به_بیس": ltf.get("reach", pos["fill_time"]), "زمان_چاک_۱دقیقه": ltf.get("conf"),
+            "_ltf": pos["ltf"],
         })
 
     # ---------- سفارش‌ها (تأیید ۱دقیقه) ----------
@@ -1040,10 +1097,32 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     def trend_reason(direction):
         """کدام روند جلوی این جهت را گرفته: trend4 / trend15 / trend_both / origin (اجرای خلاف روند)"""
         s_ = 1 if direction == "BUY" else -1
+        if trend15_at_confirm:
+            return "trend4"
         if counter_htf:
             return "trend15" if htr != s_ else "origin"
         ok4, ok15 = dtr == s_, htr == s_
         return "trend_both" if not (ok4 or ok15) else ("trend4" if not ok4 else "trend15")
+
+    def zone_gate(z):
+        """None = این بیس الان (از نظر روند و نوع بیس) قابل معامله است؛ وگرنه دلیل"""
+        s_ = 1 if z.direction == "BUY" else -1
+        if trend15_at_confirm:                  # روند ۱۵دقیقه و سی‌پی موقع تولد بیس چک شده‌اند
+            return None if dtr == s_ else "trend4"
+        if counter_htf:
+            if htr != s_:
+                return "trend15"
+            if dtr == s_:
+                return None
+            # خلاف روند ۴ساعته (یا بی‌روند): محافظه‌کارانه
+            if z.cont:
+                return "cont"
+            if not z.erc:
+                return "erc"
+            if dtr == -s_ and origin_now == dtr:
+                return "origin"
+            return None
+        return None if (dtr == s_ and htr == s_) else trend_reason(z.direction)
 
     def make_order(z, k, t_now, o_now, i_now):
         height = z.high() - z.low()
@@ -1063,7 +1142,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
             at = entry <= o_now
         rg = m1_range(t_now)
         # اگر قیمت همین حالا روی نقطه‌ی ورود است، مستقیم منتظر چاک می‌ماند
-        stage = "watch" if (at and rg is not None) else "armed"
+        stage = "watch" if (at and rg is not None and not direct) else "armed"
         p = {"z": z, "k": k, "entry": float(entry), "sl": float(sl), "tp": float(tp), "risk": float(risk),
              "active": True, "filled": False, "stage": stage,
              "j_reach": rg[0] if rg is not None else 0, "away": False,
@@ -1092,7 +1171,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         direction = p["z"].direction
         risk = (eff_entry - p["sl"]) if direction == "BUY" else (p["sl"] - eff_entry)
         if risk <= 0:
-            ltf_cancel(p, "badstop")
+            ltf_cancel(p, "badstop", "order" if p["stage"] == "order" else "watch")
             return None
         fill_t = pd.Timestamp(m1_t[j])
         p["filled"], p["active"] = True, False
@@ -1149,6 +1228,11 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
                     if came_from4(p, tj):                 # قیمت از زون مخالف ۴ساعته آمده
                         ltf_cancel(p, "from4", "watch")
                         return None
+                    if direct:                            # بدون چاک ۱دقیقه: لیمیت همین‌جا پر می‌شود
+                        p["ltf"] = None
+                        o_ = m1_o[j] + spr if buy_ else m1_o[j]
+                        gap = (o_ < e) if buy_ else (o_ > e)    # قیمت از اول همین دقیقه آن طرف ورود بود
+                        return ltf_open(p, t_bar, j, j1, o_ if gap else e, True)
                     p["stage"], p["j_reach"], p["away"] = "watch", j, False
             elif p["stage"] == "watch":
                 if len(touched4(p["c4"], tj, m1_h[j], m1_l[j])):
@@ -1231,8 +1315,11 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     tr4 = df4["trend"].to_numpy()
     zptr = 0
     live_k = np.zeros(0, dtype=np.int64)     # بیس‌های متولدشده و باطل‌نشده (به ترتیب تولد)
-    dtr = htr = 0
+    dtr = htr = origin_now = 0
     allowed = ()
+    # روند ۱۵دقیقه در لحظه‌ی تأیید هر بیس (بعد از بسته شدن کندل چاک)
+    Z_TR15_CONF = np.array([tr15[min(int(np.searchsorted(t15, np.datetime64(pd.Timestamp(z.created_time), "ns"))),
+                                     len(tr15) - 1)] if len(tr15) else 0 for z in zones], dtype=np.int64)
 
     for i in range(len(df15)):
         di = np.searchsorted(t4, t15[i], side="right") - 1
@@ -1243,10 +1330,12 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         c_prev = float(c15[i - 1])
         # روندها فقط از کندل‌های بسته‌شده: آخرین کندل ۴ساعته‌ی کامل و کندل ۱۵دقیقه‌ی قبلی
         dtr, htr = int(tr4[di - 1]), int(tr15[i - 1])
-        if counter_htf:
-            # روند ۱۵دقیقه لازم است؛ خلاف روند ۴ساعته فقط اگر قیمت از بیس ۴ساعته‌ی هم‌جهتِ روند ۴ساعته نمی‌آید
-            d = {1: "BUY", -1: "SELL"}.get(htr)
-            allowed = (d,) if d and not (dtr == -htr and int(origin[di - 1]) == dtr) else ()
+        # جهت‌هایی که این کندل اصلاً ممکن است معامله شوند (جزئیات هر بیس در zone_gate)
+        if trend15_at_confirm:
+            allowed = tuple(x for x in ({1: "BUY", -1: "SELL"}.get(dtr),) if x)
+        elif counter_htf:
+            origin_now = int(origin[di - 1])
+            allowed = tuple(x for x in ({1: "BUY", -1: "SELL"}.get(htr),) if x)
         else:
             allowed = dirs_allowed(dtr, htr)
 
@@ -1266,6 +1355,14 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
             zptr += 1
         if zptr > z0:
             live_k = np.concatenate([live_k, np.arange(z0, zptr, dtype=np.int64)])
+            if trend15_at_confirm:
+                # سی‌پی، یا روند ۱۵دقیقه‌ی خلاف موقع تأیید بیس → هیچ‌وقت معامله نمی‌شود
+                for k in range(z0, zptr):
+                    s_ = 1 if Z_BUY[k] else -1
+                    if zones[k].cont:
+                        Z_LAST[k], Z_USED[k] = _BLOCK_CODE["cont"], True
+                    elif Z_TR15_CONF[k] != s_:
+                        Z_LAST[k], Z_USED[k] = _BLOCK_CODE["conf15"], True
 
         # ---------- باطل شدن و لمس بیس‌ها ----------
         # باطل: بیس جدیدِ هم‌پوشان جایش را گرفت، یا (پیش از آماده شدن) کندل قبلی پشت دیستال بسته شد
@@ -1291,8 +1388,9 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
             if Z_TOUCH_I[k] == i:
                 continue
             z = zones[k]
-            if z.direction not in allowed:
-                Z_LAST[k], Z_USED[k] = _BLOCK_CODE[trend_reason(z.direction)], True
+            why = zone_gate(z)
+            if why:
+                Z_LAST[k], Z_USED[k] = _BLOCK_CODE[why], True
                 continue
             why = htf_block(z, t, o)
             if why:
@@ -1310,6 +1408,10 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
             for k in lu:
                 z = zones[k]
                 if z.direction not in allowed or z.high() - z.low() <= 0:
+                    continue
+                why = zone_gate(z)
+                if why:
+                    Z_LAST[k] = _BLOCK_CODE[why]
                     continue
                 why = htf_block(z, t, o)
                 if why:
@@ -1337,8 +1439,14 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
             if not p["active"] or p["filled"]:
                 continue
             d_ = p["z"].direction                      # روند پیش از ورود برگشت → لغو
-            if (d_ != {1: "BUY", -1: "SELL"}.get(htr)) if keep_on_htf_flip else (d_ not in allowed):
-                ltf_cancel(p, trend_reason(d_))
+            if keep_on_htf_flip:
+                why = None if d_ == {1: "BUY", -1: "SELL"}.get(htr) else trend_reason(d_)
+            elif keep_external and p["z"].external:
+                why = None                             # بیس اکسترنال با برگشت روند ۴ساعته لغو نمی‌شود
+            else:
+                why = zone_gate(p["z"])
+            if why:
+                ltf_cancel(p, why)
                 continue
             pos = ltf_step(p, t, l, h)
             if pos is not None:
@@ -1370,11 +1478,13 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     # ---------- قیف: سرنوشت هر بیس (فقط بیس‌های متولد در بازه‌ی معامله) ----------
     for p in pending:
         Z_FATE[p["k"]] = f"{STAGE_KEY[p['stage']]}_end"           # تا آخر دیتا منتظر ماند
-    inz = np.array([in_p(z.created_time) for z in zones], dtype=bool) if nz else np.zeros(0, dtype=bool)
+    inz = np.array([in_p(z.born_time) for z in zones], dtype=bool) if nz else np.zeros(0, dtype=bool)
     counts.update({"f_dedup": int(inz.sum()), "f_ready": int((inz & Z_PLACED).sum())})
     for k in np.flatnonzero(inz):
         f = Z_FATE.get(k, "a_end") if Z_PLACED[k] else _LAST_FATE[int(Z_LAST[k])]
         counts[f] = counts.get(f, 0) + 1
+        if f == "traded":
+            count_type(zones[k].kind, "traded")
     tdf = pd.DataFrame(trades)
     return _symbol_metrics(symbol, tdf, equity, max_dd, spread_ref), counts, tdf
 
@@ -1549,7 +1659,9 @@ def trades_review_table(name, results, frames):
     out = pd.DataFrame({
         "اجرا": name, "شماره": tr["شماره"], "نماد": tr["نماد"], "جهت": tr["جهت"],
         "نتیجه_R": tr["نتیجه_R"].astype(float).round(2), "علت_خروج": tr["علت_خروج"],
-        "دلیل_استاپ": tr["دلیل_استاپ"],
+        "دلیل_استاپ": tr["دلیل_استاپ"], "نوع_بیس": tr["نوع_بیس"].map(dict(BASE_TYPES)),
+        "اکسترنال": tr["اکسترنال"].map({True: "بله", False: ""}),
+        "لگ‌اوت_ای‌آر‌سی": tr["ای‌آر‌سی"].map({True: "بله", False: ""}),
         "شروع_بیس_۱۵دقیقه": tr["بیس_شروع"].map(_fmt_t), "پایان_بیس_۱۵دقیقه": tr["بیس_پایان"].map(_fmt_t),
         "تأیید_بیس_(کندل_چاک)": tr["زمان_تأیید_بیس"].map(_fmt_t),
         "پراکسیمال": tr["پراکسیمال"], "دیستال": tr["دیستال"], "سطح_چاک_بیس": tr["سطح_چاک_بیس"],
@@ -1651,7 +1763,9 @@ def draw_trade_charts(chart_dir, run_idx, name, raw, frames, max_n=None):
         res = float(r["نتیجه_R"])
         ax.set_title(f"#{int(r['شماره'])} {sym} {'BUY' if buy else 'SELL'} | {res:+.2f}R | "
                      f"exit: {reason_en.get(str(r['علت_خروج']), str(r['علت_خروج']))} | "
-                     f"stop cause: {cause_en.get(r.get('دلیل_استاپ', ''), '-')} | entry {t_in:%Y-%m-%d %H:%M}",
+                     f"stop cause: {cause_en.get(r.get('دلیل_استاپ', ''), '-')} | entry {t_in:%Y-%m-%d %H:%M}\n"
+                     f"base: {r.get('نوع_بیس', '?')}{' external' if r.get('اکسترنال') else ''}"
+                     f"{' ERC leg-out' if r.get('ای‌آر‌سی') else ''}",
                      fontsize=10)
         ax.legend(loc="upper left", fontsize=7)
         if has_m1:
@@ -1737,7 +1851,9 @@ FUNNEL_STAGES = [("f_all", "۱. همه‌ی بیس‌های ۱۵دقیقه (با
 def _trend_rows(g, verb):
     return [(f"{g}_trend4", f"روند ۴ساعته {verb}"), (f"{g}_trend15", f"روند ۱۵دقیقه {verb}"),
             (f"{g}_trend_both", f"هر دو روند {verb}"),
-            (f"{g}_origin", "قیمت از بیس ۴ساعته‌ی هم‌جهت روند ۴ساعته آمد (فقط اجرای خلاف روند)")]
+            (f"{g}_origin", "قیمت از بیس ۴ساعته‌ی هم‌جهت روند ۴ساعته آمد (فقط اجرای خلاف روند)"),
+            (f"{g}_cont", "روند ۴ساعته برگشت و بیس سی‌پی بود (فقط اجرای خلاف روند)"),
+            (f"{g}_erc", "روند ۴ساعته برگشت و لگ‌اوت ای‌آر‌سی نبود (فقط اجرای خلاف روند)")]
 
 
 # سرنوشت هر بیس معتبر — هر بیس دقیقاً در یک ردیف شمرده می‌شود
@@ -1747,14 +1863,19 @@ FATE_GROUPS = [
       ("n_trend_both", "هر دو روند خلاف بیس بودند (یا بی‌روند)"),
       ("n_origin", "قیمت از بیس ۴ساعته‌ی هم‌جهت روند ۴ساعته می‌آمد (فقط اجرای خلاف روند)"),
       ("n_inside", "داخل زون مخالف ۴ساعته بود"), ("n_near", "نزدیک‌تر از ۳ برابر ریسک به زون مخالف ۴ساعته"),
-      ("n_cp", "سه سی‌پی پشت‌سرهم روی ۴ساعته"), ("n_dead", "پیش از بررسی شکست یا بیس جدید جایش را گرفت")]),
+      ("n_cp", "سه سی‌پی پشت‌سرهم روی ۴ساعته"),
+      ("n_cont", "سی‌پی بود (رلی بیس رلی / دراپ بیس دراپ) و این اجرا روی سی‌پی معامله نمی‌کند"),
+      ("n_erc", "خلاف روند ۴ساعته بود و لگ‌اوت ای‌آر‌سی نداشت"),
+      ("n_conf15", "موقع تأیید بیس روند ۱۵دقیقه خلاف بود"),
+      ("n_dead", "پیش از بررسی شکست یا بیس جدید جایش را گرفت")]),
     ("آماده شد ولی قیمت به بیس نرسید",
      _trend_rows("a", "برگشت") + [("a_breach", "بیس با کلوز ۱۵دقیقه شکست"),
                                   ("a_replaced", "بیس جدید هم‌پوشان جایش را گرفت"),
                                   ("a_end", "تا آخر دیتا منتظر ماند")]),
     ("قیمت به بیس رسید ولی چاک ۱دقیقه نیامد",
      [("w_from4", "قیمت از زون مخالف ۴ساعته آمده بود"), ("w_touch4", "بعد از رسیدن، قیمت به زون مخالف ۴ساعته خورد"),
-      ("w_test2", "قیمت دور شد و بدون چاک برگشت (تست دوم)")] + _trend_rows("w", "برگشت")
+      ("w_test2", "قیمت دور شد و بدون چاک برگشت (تست دوم)"),
+      ("w_badstop", "قیمت از اول آن طرف استاپ باز شد (فقط ورود بدون تأیید)")] + _trend_rows("w", "برگشت")
      + [("w_breach", "بیس با کلوز ۱۵دقیقه شکست"), ("w_replaced", "بیس جدید هم‌پوشان جایش را گرفت"),
         ("w_end", "تا آخر دیتا منتظر چاک ماند")]),
     ("چاک ۱دقیقه آمد ولی اوردر پر نشد",
@@ -1798,6 +1919,36 @@ def funnel_table(runs):
                 r = row(f"      {lab}", [k])
                 if any(c.get(k, 0) for _n, c in counts):
                     rows.append(r)
+    return pd.DataFrame(rows)
+
+
+BASE_TYPES = [("RBR", "رلی بیس رلی (سی‌پی دیمند)"), ("DBR", "دراپ بیس رلی (دیمند برگشتی)"),
+              ("DBD", "دراپ بیس دراپ (سی‌پی سوپلای)"), ("RBD", "رلی بیس دراپ (سوپلای برگشتی)"),
+              ("?", "نامشخص (کندل ورود پیدا نشد)")]
+TYPE_STAGES = [("all", "همه‌ی بیس‌های ۱۵دقیقه‌ی شناسایی‌شده"),
+               ("no_oe", "   حذف: کنسالیدیشن اوی نداشت"),
+               ("weak", "   حذف: لگ‌اوت ضعیف (بدنه‌ی کندل خروج کمتر از میانگین اندازه‌ی کندل‌ها)"),
+               ("no_opp", "   حذف: چاک نداد — بیس مخالفی برای چاک نبود"),
+               ("returned", "   حذف: چاک نداد — قیمت پیش از چاک به بیس برگشت"),
+               ("never", "   حذف: چاک نداد — سقف/کف بیس مخالف هیچ‌وقت با بادی شکسته نشد"),
+               ("valid", "◀ بیس معتبر (کنسالیدیشن اوی + لگ‌اوت قوی + تأیید چاک)"),
+               ("external", "      از معتبرها: اکسترنال (شروع‌کننده‌ی لگ)"),
+               ("erc", "      از معتبرها: لگ‌اوت ای‌آر‌سی"),
+               ("traded", "      از معتبرها: معامله شد (اجرای اصلی)")]
+
+
+def type_table(runs):
+    """همه‌ی بیس‌های ۱۵دقیقه‌ی شناسایی‌شده به تفکیک نوع، و چندتا به چه دلیلی معتبر نشدند (اجرای اصلی)."""
+    c = _run_counts(runs[0][1]) if runs else {}
+    rows = []
+    for st, lab in TYPE_STAGES:
+        r = {"مرحله": lab}
+        for kind, name in BASE_TYPES:
+            r[name] = c.get(f"ty|{kind}|{st}", 0)
+        r["جمع"] = sum(c.get(f"ty|{kind}|{st}", 0) for kind, _ in BASE_TYPES)
+        all_ = sum(c.get(f"ty|{kind}|all", 0) for kind, _ in BASE_TYPES)
+        r["٪ از همه"] = round(r["جمع"] / all_ * 100.0, 1) if all_ else 0.0
+        rows.append(r)
     return pd.DataFrame(rows)
 
 
@@ -1853,14 +2004,25 @@ def write_excel(sw, runs, frames):
         "(نزدیک ۱ تا ۱.۵ = استاپ فقط کمی کوچک بود؛ خیلی بیشتر = خود بیس اشتباه بود).",
     ]}).to_excel(sw, sheet_name="دلیل_استاپ‌ها", index=False, startrow=len(cdf) + 2)
 
+    tyt = type_table(runs)
+    pd.DataFrame([{"مرحله": "بیس‌های ۱۵دقیقه به تفکیک نوع — چه قابل معامله باشند چه نه"}]).to_excel(
+        sw, sheet_name="قیف", index=False, header=False)
+    tyt.to_excel(sw, sheet_name="قیف", index=False, startrow=1)
+    r0 = len(tyt) + 4
+    pd.DataFrame([{"مرحله": "سرنوشت بیس‌ها در هر اجرا"}]).to_excel(
+        sw, sheet_name="قیف", index=False, header=False, startrow=r0 - 1)
     fun = funnel_table(runs)
-    fun.to_excel(sw, sheet_name="قیف", index=False)
+    fun.to_excel(sw, sheet_name="قیف", index=False, startrow=r0)
     pd.DataFrame({"توضیح": [
         "فقط بیس‌هایی شمرده می‌شوند که در بازه‌ی معامله متولد شده‌اند.",
+        "نوع بیس از کندل ورود: اولین کندل غیربیس سمت چپ بیس؛ صعودی = رلی، نزولی = دراپ. سی‌پی = بیس ادامه‌دهنده.",
+        "اکسترنال: کف بیس (دیمند) یا سقف بیس (سوپلای) پایین‌تر/بالاتر از ۳ کندل قبل و ۳ کندل بعد — شروع لگ.",
+        f"لگ‌اوت ای‌آر‌سی: بدنه‌ی کندل خروج دست‌کم {ERC_BODY_PCT * 100:.0f}٪ کل کندل و "
+        f"{ERC_BODY_ATR:g} برابر میانگین اندازه‌ی کندل‌ها.",
         "«آماده نشد»: هیچ‌وقت اجازه‌ی معامله نگرفت؛ آخرین دلیلی که جلویش را گرفت شمرده شده است.",
         "«آماده شد»: ربات منتظر رسیدن قیمت به آن بیس ماند (روندها و فیلترهای ۴ساعته اجازه دادند).",
         "جمع ردیف‌های ■ = مرحله‌ی ۵. ستون ٪ = سهم هر ردیف از بیس‌های معتبر اجرای اصلی.",
-    ]}).to_excel(sw, sheet_name="قیف", index=False, startrow=len(fun) + 2)
+    ]}).to_excel(sw, sheet_name="قیف", index=False, startrow=r0 + len(fun) + 2)
     ydf = yearly_table(runs)
     if not ydf.empty:
         ydf.to_excel(sw, sheet_name="سال‌ها", index=False)
