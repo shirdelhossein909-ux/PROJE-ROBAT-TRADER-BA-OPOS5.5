@@ -271,24 +271,23 @@ LTF_RUN_NAMES = {"zone": "تأیید ۱دقیقه + ورود روی بیس ۱۵�
                  None: "ورود لیمیت ۱۵دقیقه (بدون تأیید)"}
 DESIGN_VARIANTS = {
     # نام اجرا: (تنظیمات، توضیح) — اجرای اصلی بالا (LTF_MODE، فقط تست اول)
-    "تست_اول_و_دوم": ({"ltf_mode": "zone", "ltf_tests": 2},
-        "مثل اجرای اصلی، ولی تست دوم بیس هم (با چاک ۱دقیقه‌ی تازه) معامله می‌شود؛ تست سوم نه"),
-    "تست_دوم_با_شکست_خط_روند": ({"ltf_mode": "zone", "ltf_tests": 2, "ltf_test2_tl": True},
-        "مثل «تست اول و دوم»، ولی تست دوم علاوه بر چاک ۱دقیقه، شکست خط روند ۱دقیقه هم می‌خواهد"),
-    "ورود_لحظه‌ی_چاک": ({"ltf_mode": "market"},
-        "فقط برای مقایسه: همان لحظه‌ی چاک ۱دقیقه با قیمت بازار (استاپ بیس ۱۵دقیقه، تارگت 3R) — فقط تست اول"),
     "زون_مخالف_۴ساعته_بدون_اوی": ({"ltf_mode": "zone", "htf_opp_no_oe": True},
         "مثل اجرای اصلی، ولی همه‌ی بیس‌های ۴ساعته‌ی مخالف (حتی بدون کنسالیدیشن اوی) جلوی معامله را می‌گیرند"),
-    "بیس_۱دقیقه_روی_بیس_۱۵دقیقه": ({"ltf_mode": "zone", "ltf_ext": True},
-        "مثل اجرای اصلی، ولی اگر یک بیس قوی ۱دقیقه چسبیده روی بیس ۱۵دقیقه باشد جزو آن حساب می‌شود "
-        "(فقط اگر ارتفاع بیس کمتر از ۱٫۴ برابر شود)"),
     "لگ‌اوت_بدون_شرط_قدرت": ({"ltf_mode": "zone", "legout_atr": 0.0},
         "مثل اجرای اصلی، ولی بیس ۱۵دقیقه شرط «لگ‌اوت قوی» ندارد (فقط کنسالیدیشن اوی و تأیید چاک)"),
     "لگ‌اوت_نصف": ({"ltf_mode": "zone", "legout_atr": 0.5},
         "مثل اجرای اصلی، ولی لگ‌اوت قوی = بدنه‌ی کندل خروج دست‌کم نصفِ میانگین اندازه‌ی کندل‌ها (به‌جای یک برابر)"),
-    # ورود روی بیس ۱دقیقه دو بار از ورود روی بیس ۱۵دقیقه بدتر بود؛ برای اجرای دوباره # را بردار:
-    # "تأیید_۱دقیقه_ورود_بیس_۱دقیقه": ({"ltf_mode": "base"},
-    #     "قیمت به بیس ۱۵دقیقه می‌رسد → چاک ۱دقیقه → اوردر روی بیس ۱دقیقه (ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R)"),
+    "خلاف_روند_۴ساعته_با_شرط": ({"ltf_mode": "zone", "counter_htf": True},
+        "روند ۴ساعته لازم نیست هم‌جهت باشد (روند ۱۵دقیقه لازم است). معامله‌ی خلاف روند ۴ساعته فقط وقتی که "
+        "قیمت از بیس ۴ساعته‌ی هم‌جهت روند ۴ساعته نمی‌آید (مثلاً در روند صعودی ۴ساعته، اگر قیمت از دیمند ۴ساعته "
+        "بلند شده، سل نه)"),
+    # آزمایش‌های تمام‌شده (روی طلا کمکی نکردند) — برای اجرای دوباره # را بردار:
+    # "تست_اول_و_دوم": ({"ltf_mode": "zone", "ltf_tests": 2}, "تست دوم بیس هم با چاک تازه"),
+    # "تست_دوم_با_شکست_خط_روند": ({"ltf_mode": "zone", "ltf_tests": 2, "ltf_test2_tl": True},
+    #     "تست دوم با چاک + شکست خط روند ۱دقیقه"),
+    # "ورود_لحظه‌ی_چاک": ({"ltf_mode": "market"}, "ورود با قیمت بازار همان لحظه‌ی چاک ۱دقیقه"),
+    # "بیس_۱دقیقه_روی_بیس_۱۵دقیقه": ({"ltf_mode": "zone", "ltf_ext": True}, "بیس قوی ۱دقیقه جزو بیس ۱۵دقیقه"),
+    # "تأیید_۱دقیقه_ورود_بیس_۱دقیقه": ({"ltf_mode": "base"}, "اوردر روی بیس ۱دقیقه"),
 }
 # بیس قوی ۱دقیقه روی بیس ۱۵دقیقه: حداکثر ارتفاع بیسِ یکی‌شده نسبت به ارتفاع بیس ۱۵دقیقه
 LTF_EXT_MAX_HEIGHT = 1.4
@@ -1367,7 +1366,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                    book=None, alloc_mode=False, arm_untouched_zones=False,
                    min_risk_spread=0.0, min_room_r=0.0, htf_location=False, trend_mode=None,
                    ltf_mode=None, ltf_tests=None, ltf_test2_tl=False, htf_opp_no_oe=False, ltf_ext=False,
-                   legout_atr=None):
+                   legout_atr=None, counter_htf=False):
     """موتور استراتژی برای یک نماد — به‌صورت generator.
 
     ltf_mode (تأیید ۱دقیقه): None = سفارش لیمیت روی بیس ۱۵دقیقه (روش فعلی) |
@@ -1601,6 +1600,39 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         _hz_from, _hz_until, _hz_lo, _hz_hi, _hz_buy = (np.concatenate([x, y]) for x, y in zip(_a, _b))
     else:
         _hz_from = None
+
+    # ---------- قیمت از بیس ۴ساعته‌ی کدام طرف می‌آید (برای معامله‌ی خلاف روند ۴ساعته) ----------
+    # برای هر کندل ۴ساعته: آخرین بیس ۴ساعته‌ای (بدون شرط کنسالیدیشن اوی) که قیمت به آن رسید و نشکستش.
+    # +1 = قیمت از یک دیمند ۴ساعته می‌آید، -1 = از یک سوپلای، 0 = هیچ (یا آن بیس بعداً شکست).
+    _origin = None
+    if counter_htf:
+        _oz = dedup_zones_pit(build_zones(d1, symbol, "TREND", 6, d1["atr"], legout_clear=0))
+        _origin = np.zeros(len(d1), dtype=np.int8)
+        if _oz:
+            _NEV4 = np.datetime64("2262-01-01", "ns")
+            _d_t = d1["time"].to_numpy(dtype="datetime64[ns]")
+            _o4, _h4, _l4, _c4 = (d1[k_].to_numpy(dtype=float) for k_ in ("open", "high", "low", "close"))
+            _zf = np.array([np.datetime64(pd.Timestamp(z_.created_time) + trend_span, "ns") for z_ in _oz])
+            _zs = np.array([np.datetime64(pd.Timestamp(z_.superseded_time), "ns") if z_.superseded_time is not None
+                            else _NEV4 for z_ in _oz])
+            _zlo = np.array([z_.low() for z_ in _oz]); _zhi = np.array([z_.high() for z_ in _oz])
+            _zb = np.array([z_.direction == "BUY" for z_ in _oz])
+            _dead = np.zeros(len(_oz), dtype=bool)
+            _st, _stz = 0, -1
+            for k4 in range(len(d1)):
+                _v = (_zf <= _d_t[k4]) & (_d_t[k4] < _zs) & ~_dead
+                _br = _v & ((_zb & (_c4[k4] < _zlo)) | (~_zb & (_c4[k4] > _zhi)))
+                _tc = _v & ~_br & (_h4[k4] >= _zlo) & (_l4[k4] <= _zhi)
+                _dead |= _br
+                _td, _ts = _tc & _zb, _tc & ~_zb
+                if _td.any() or _ts.any():
+                    if _td.any() and (not _ts.any() or _c4[k4] >= _o4[k4]):
+                        _st, _stz = 1, int(np.flatnonzero(_td)[-1])
+                    else:
+                        _st, _stz = -1, int(np.flatnonzero(_ts)[-1])
+                if _stz >= 0 and _dead[_stz]:
+                    _st, _stz = 0, -1
+                _origin[k4] = _st
 
     def opp_room_block(direction, entry_price, risk_price, t_now):
         """نزدیک زون مخالف ۴ساعته/روزانه نباشیم: فاصله‌ی ورود تا نزدیک‌ترین زون مخالفِ معتبر
@@ -2429,6 +2461,13 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         # جهت‌های مجاز معامله در این کندل (روند روزانه و روند تایم زون باید هم‌جهت باشند و
         # جهت زون هم با روند یکی باشد؛ در فاز فشردگی هر دو جهت)
         allowed_now = dirs_allowed(dtr, htr)
+        if counter_htf:
+            # روند ۴ساعته لازم نیست؛ روند ۱۵دقیقه لازم است. خلاف روند ۴ساعته فقط اگر قیمت از بیس ۴ساعته‌ی
+            # هم‌جهتِ روند ۴ساعته نمی‌آید.
+            _sg = 1 if dtr > 0 else (-1 if dtr < 0 else 0)
+            _org = int(_origin[di - 1]) if _origin is not None else 0
+            allowed_now = tuple(d_ for d_ in _ALLOWED_DIRS.get(int(htr), ())
+                                if not (_sg != 0 and (1 if d_ == "BUY" else -1) == -_sg and _org == _sg))
 
         # کندل بسته‌شده‌ی قبلی برای چک‌های لغو (هفتگی و دور شدن قیمت)
         o_prev=float(_o_a[i-1]); c_prev=float(_c_a[i-1])
