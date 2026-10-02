@@ -258,16 +258,27 @@ LEAVE_ONE_OUT_TEST = False
 # ⚠️ زمان‌بر: هر ردیف یک اجرای کامل. ردیفی را که نمی‌خواهی با # غیرفعال کن.
 DESIGN_TESTS = True
 # اجرای اصلی: «zone» = قیمت به بیس ۱۵دقیقه می‌رسد → منتظر چاک ۱دقیقه در جهت بیس → بعد اوردر روی همان
-# بیس ۱۵دقیقه (ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R) | «base» = اوردر روی بیس ۱دقیقه | None = بدون تأیید (روش قدیمی)
+# بیس ۱۵دقیقه (ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R) | «market» = ورود همان لحظه‌ی چاک با قیمت بازار (استاپ همان
+# استاپ بیس ۱۵دقیقه، تارگت 3R) | «base» = اوردر روی بیس ۱دقیقه | None = بدون تأیید (روش قدیمی)
 LTF_MODE = "zone"
+# تست‌های بیس ۱۵دقیقه: هر تست چاک ۱دقیقه‌ی جدا می‌خواهد؛ تست سوم هیچ‌وقت. ۱ = فقط تست اول، ۲ = تست اول و دوم
+LTF_MAX_TESTS = 1
+# قیمت باید دست‌کم این‌قدر R از بیس دور شود تا برگشت بعدی «تست تازه» حساب شود
+LTF_TEST_AWAY_R = 1.0
 LTF_RUN_NAMES = {"zone": "تأیید ۱دقیقه + ورود روی بیس ۱۵دقیقه",
+                 "market": "تأیید ۱دقیقه + ورود لحظه‌ی چاک",
                  "base": "تأیید ۱دقیقه + ورود روی بیس ۱دقیقه",
                  None: "ورود لیمیت ۱۵دقیقه (بدون تأیید)"}
 DESIGN_VARIANTS = {
-    # نام اجرا: (تنظیمات، توضیح) — اجرای اصلی بالا (LTF_MODE)
-    "تأیید_۱دقیقه_ورود_بیس_۱دقیقه": ({"ltf_mode": "base"},
-        "قیمت به بیس ۱۵دقیقه می‌رسد → منتظر چاک ۱دقیقه در جهت بیس → بعد اوردر روی بیس ۱دقیقه‌ای که چاک "
-        "را ساخت (ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R)"),
+    # نام اجرا: (تنظیمات، توضیح) — اجرای اصلی بالا (LTF_MODE، فقط تست اول)
+    "بیس_۱۵دقیقه_تست_اول_و_دوم": ({"ltf_mode": "zone", "ltf_tests": 2},
+        "مثل اجرای اصلی، ولی تست دوم بیس هم (با چاک ۱دقیقه‌ی تازه) معامله می‌شود؛ تست سوم نه"),
+    "ورود_لحظه‌ی_چاک_۱دقیقه": ({"ltf_mode": "market"},
+        "قیمت به بیس ۱۵دقیقه می‌رسد → همان لحظه‌ی چاک ۱دقیقه با قیمت بازار وارد می‌شود (استاپ بیس ۱۵دقیقه، "
+        "تارگت 3R) — فقط تست اول"),
+    # ورود روی بیس ۱دقیقه دو بار از ورود روی بیس ۱۵دقیقه بدتر بود؛ برای اجرای دوباره # را بردار:
+    # "تأیید_۱دقیقه_ورود_بیس_۱دقیقه": ({"ltf_mode": "base"},
+    #     "قیمت به بیس ۱۵دقیقه می‌رسد → چاک ۱دقیقه → اوردر روی بیس ۱دقیقه (ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R)"),
 }
 # تأیید ۱دقیقه: سفارشِ بعد از تأیید اگر قیمت این‌قدر R از بیس دور شد و پر نشد، لغو می‌شود
 # (تارگت خود معامله همان 3R است. وقتی ربات سودده شد، چند مقدار دیگرِ این عدد هم بکتست شود.)
@@ -1309,7 +1320,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                    retry_rejected_zones=False, return_state=False,
                    book=None, alloc_mode=False, arm_untouched_zones=False,
                    min_risk_spread=0.0, min_room_r=0.0, htf_location=False, trend_mode=None,
-                   ltf_mode=None):
+                   ltf_mode=None, ltf_tests=None):
     """موتور استراتژی برای یک نماد — به‌صورت generator.
 
     ltf_mode (تأیید ۱دقیقه): None = سفارش لیمیت روی بیس ۱۵دقیقه (روش فعلی) |
@@ -1694,6 +1705,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         "ورود_بازار_بعد_از_تأیید": 0,
         "لغو_دور_شدن_بدون_ورود": 0,
         "لغو_استاپ_۱دقیقه_کوچک": 0,
+        "تست_دوم_به_بعد": 0,
+        "لغو_تست_بیش_از_مجاز": 0,
+        "بازگشت_برای_تست_بعد": 0,
     }
 
     # اسپرد (برحسب قیمت) برای مدل Bid/Ask: خرید لیمیت با Ask پر می‌شود و فروش با Ask بسته می‌شود
@@ -1712,6 +1726,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
     # ---------- تأیید ۱دقیقه: بیس‌های ۱دقیقه‌ای که چاک داده‌اند (همان قوانین بیس ۱۵دقیقه) ----------
     ltf_on = bool(ltf_mode) and m15_t is not None
+    ltf_max_tests = int(LTF_MAX_TESTS if ltf_tests is None else ltf_tests)
     conf_at = {}
     if ltf_on:
         _m1 = pd.DataFrame({"time": m15["time"].values, "open": m15_o, "high": m15_h,
@@ -1834,6 +1849,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 "risk": float(risk)}
 
     _l_bar, _h_bar = [0.0], [0.0]        # کف/سقف کندل ۱۵دقیقه‌ی جاری (برای میان‌بر ltf_step)
+    _NO_REACH = 2 ** 62                   # «هنوز در این تست به بیس نرسیده»
 
     def ltf_cancel(p, t_now, key, why):
         p["active"] = False
@@ -1867,28 +1883,34 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         pos = {"ZoneID": p["z"].zone_id, "direction": direction, "eff_entry": float(eff_entry),
                "sl": float(p["sl"]), "tp": float(p["tp"]), "risk": float(risk), "risk_amt": float(risk_amt),
                "fill_time": fill_t, "test": p["test"], "z": p["z"], "trigger": float(trigger), "managed": False,
-               "ltf": p.get("ltf")}
+               "ltf": p.get("ltf"), "src": p}
         if in_bar_fill:
             fav = entry_bar_fav(direction, eff_entry, m15_o[j], m15_h[j], m15_l[j], m15_c[j])
             ex = process_pos_candle(pos, m15_h[j], m15_l[j], t_bar, fav=fav)
             if ex[0]:
                 finalize_trade(pos, t_bar, float(ex[1]), ex[2])
+                ltf_rearm(pos, t_bar)
                 return None
         for jj in range(j + 1, j1):
             ex = process_pos_candle(pos, m15_h[jj], m15_l[jj], t_bar)
             if ex[0]:
                 finalize_trade(pos, t_bar, float(ex[1]), ex[2])
+                ltf_rearm(pos, t_bar)
                 return None
         return pos
 
     def ltf_step(p, t_bar):
         """یک کندل ۱۵دقیقه برای سفارشِ «تأیید ۱دقیقه» روی کندل‌های ۱دقیقه:
-        armed (منتظر رسیدن قیمت به بیس) → watch (منتظر چاک ۱دقیقه) → order (اوردر لیمیت) → پوزیشن.
+        armed (منتظر رسیدن قیمت به بیس) → watch (منتظر چاک ۱دقیقه) → order (اوردر لیمیت) → پوزیشن
+        (در حالت «market» ورود همان لحظه‌ی چاک با قیمت بازار است).
+        تست: قیمت به بیس می‌رسد = تست ۱. اگر دست‌کم LTF_TEST_AWAY_R × ریسک از بیس دور شد و دوباره رسید =
+        تست بعدی، که چاک ۱دقیقه‌ی تازه می‌خواهد. بیشتر از ltf_max_tests تست → لغو.
         خروجی: پوزیشن باز یا None."""
         buy_ = p["z"].direction == "BUY"
+        e15, sl15, tp15, ee15, r15 = p["z15"]
         if p["stage"] == "armed":
             # میان‌بر: اگر کل همین کندل ۱۵دقیقه به نقطه‌ی ورود نرسیده، کندل‌های ۱دقیقه بررسی نمی‌شوند
-            if (buy_ and _l_bar[0] + spr > p["entry"]) or (not buy_ and _h_bar[0] < p["entry"]):
+            if (buy_ and _l_bar[0] + spr > e15) or (not buy_ and _h_bar[0] < e15):
                 return None
         rng = _m15_range(t_bar)
         if rng is None:
@@ -1896,18 +1918,32 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         j, j1 = rng
         while j < j1:
             st = p["stage"]
+            reach = (buy_ and m15_l[j] + spr <= e15) or (not buy_ and m15_h[j] >= e15)
             if st == "armed":
-                # قیمت به بیس ۱۵دقیقه رسید (همان نقطه‌ی ورود فعلی)
-                if (buy_ and m15_l[j] + spr <= p["entry"]) or (not buy_ and m15_h[j] >= p["entry"]):
+                # قیمت به بیس ۱۵دقیقه رسید (همان نقطه‌ی ورود) → تست ۱
+                if reach:
                     p["stage"] = "watch"
                     p["j_reach"] = j
+                    p["tests"], p["away"] = 1, False
                     reasons["رسیدن_به_بیس_۱۵دقیقه"] += 1
             elif st == "watch":
+                if not p["away"]:
+                    if (buy_ and m15_h[j] >= e15 + LTF_TEST_AWAY_R * r15) or \
+                            (not buy_ and m15_l[j] + spr <= e15 - LTF_TEST_AWAY_R * r15):
+                        p["away"] = True              # قیمت از بیس دور شد؛ برگشت بعدی = تست تازه
+                elif reach:
+                    p["tests"] += 1
+                    if p["tests"] > ltf_max_tests:
+                        ltf_cancel(p, t_bar, "لغو_تست_بیش_از_مجاز",
+                                   f"لغو: تست {p['tests']} (مجاز تا تست {ltf_max_tests})")
+                        return None
+                    reasons["تست_دوم_به_بعد"] += 1
+                    p["j_reach"], p["away"] = j, False
                 for q1 in conf_at.get(j, ()):
-                    # بیس ۱دقیقه هم‌جهت، بعد از رسیدن قیمت، و روی همان بیس ۱۵دقیقه
+                    # بیس ۱دقیقه هم‌جهت، بعد از رسیدن قیمت در همین تست، و روی همان بیس ۱۵دقیقه
                     if _L_buy[q1] != buy_ or _L_be[q1] < p["j_reach"]:
                         continue
-                    if (buy_ and _L_lo[q1] > p["entry"]) or (not buy_ and _L_hi[q1] < p["entry"]):
+                    if (buy_ and _L_lo[q1] > e15) or (not buy_ and _L_hi[q1] < e15):
                         continue
                     reasons["تأیید_چاک_۱دقیقه"] += 1
                     log_event(events, pd.Timestamp(m15_t[j]), symbol, p["z"].zone_id, "LTF_CHoCH", "")
@@ -1916,7 +1952,18 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                                 "b0": pd.Timestamp(_z1c.base_start), "b1": pd.Timestamp(_z1c.base_end),
                                 "prox": float(_z1c.proximal), "dist": float(_z1c.distal),
                                 "lvl": float(getattr(_z1c, "choch_level", np.nan)),
-                                "lvl_from": pd.Timestamp(getattr(_z1c, "choch_from", _z1c.base_start))}
+                                "lvl_from": pd.Timestamp(getattr(_z1c, "choch_from", _z1c.base_start)),
+                                "test": p["tests"]}
+                    if ltf_mode == "market":
+                        # ورود همان لحظه‌ی چاک با قیمت بازار؛ استاپ همان استاپ بیس ۱۵دقیقه، تارگت 3R از ورود واقعی
+                        ent = m15_c[j] + spr if buy_ else m15_c[j]
+                        rk = (ent - sl15) if buy_ else (sl15 - ent)
+                        if rk <= 0:
+                            ltf_cancel(p, t_bar, "لغو_استاپ_۱دقیقه_کوچک", "لغو: قیمت لحظه‌ی چاک پشت استاپ بود")
+                            return None
+                        p.update(sl=float(sl15), tp=float(ent + rr * rk if buy_ else ent - rr * rk))
+                        reasons["ورود_بازار_بعد_از_تأیید"] += 1
+                        return ltf_open(p, t_bar, j, j1, ent, False)
                     if ltf_mode == "base":
                         h1 = _L_hi[q1] - _L_lo[q1]
                         if buy_:
@@ -1947,11 +1994,38 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 far = (m15_h[j] >= p["entry"] + LTF_CANCEL_R * p["risk"]) if buy_ \
                     else (m15_l[j] + spr <= p["entry"] - LTF_CANCEL_R * p["risk"])
                 if far:
-                    ltf_cancel(p, t_bar, "لغو_دور_شدن_بدون_ورود",
-                               f"لغو: قیمت {LTF_CANCEL_R:g}R دور شد و اوردر پر نشد")
-                    return None
+                    if p["tests"] < ltf_max_tests:
+                        # اوردر لغو، ولی بیس برای تست بعدی (با چاک تازه) زنده می‌ماند
+                        p.update(entry=e15, sl=sl15, tp=tp15, eff_entry=ee15, risk=r15)
+                        p["stage"], p["away"] = "watch", True
+                        p["j_reach"] = _NO_REACH             # تا برگشت تازه‌ی قیمت، هیچ چاکی قبول نیست
+                        reasons["لغو_دور_شدن_بدون_ورود"] += 1
+                    else:
+                        ltf_cancel(p, t_bar, "لغو_دور_شدن_بدون_ورود",
+                                   f"لغو: قیمت {LTF_CANCEL_R:g}R دور شد و اوردر پر نشد")
+                        return None
             j += 1
         return None
+
+    def ltf_rearm(pos, t_now):
+        """بعد از بسته شدن معامله‌ی «تأیید ۱دقیقه»: اگر تست مجاز باقی مانده و بیس با کلوز ۱۵دقیقه
+        نشکسته، بیس دوباره منتظر تست بعدی (با چاک ۱دقیقه‌ی تازه) می‌ماند."""
+        p = pos.get("src")
+        if not ltf_on or p is None or p.get("tests", 1) >= ltf_max_tests:
+            return
+        z = p["z"]
+        if getattr(z, "ltf_dead", False) or z.expired:
+            return
+        k0 = int(np.searchsorted(_t_a, np.datetime64(pd.Timestamp(pos["fill_time"]), "ns")))
+        closes = _c_a[k0:i]
+        if len(closes) and ((closes < z.distal).any() if z.direction == "BUY" else (closes > z.distal).any()):
+            z.ltf_dead = True
+            return
+        e, sl_, tp_, ee, r_ = p["z15"]
+        pending.append({"z": z, "entry": e, "sl": sl_, "tp": tp_, "eff_entry": ee, "risk": r_, "t": t_now,
+                        "test": p["test"], "active": True, "filled": False, "fill_time": None, "cancel": None,
+                        "stage": "watch", "j_reach": _NO_REACH, "tests": p["tests"], "away": False, "z15": p["z15"]})
+        reasons["بازگشت_برای_تست_بعد"] += 1
 
     def finalize_trade(pos, exit_time, exit_price, reason):
         nonlocal equity, peak, max_dd
@@ -2201,6 +2275,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             exited, exit_price, reason = step_position(pos, o, h, l, c, t)
             if exited:
                 finalize_trade(pos, t, float(exit_price), reason)
+                if ltf_on:
+                    ltf_rearm(pos, t)
             else:
                 still_open.append(pos)
         open_pos = still_open
@@ -2426,6 +2502,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 _at = (_po["entry"] >= o + spr) if z.direction == "BUY" else (_po["entry"] <= o)
                 _po["stage"] = "watch" if (_at and _rg is not None) else "armed"
                 _po["j_reach"] = _rg[0] if _rg is not None else 0
+                _po["z15"] = (_po["entry"], _po["sl"], _po["tp"], _po["eff_entry"], _po["risk"])
+                _po["tests"], _po["away"] = (1 if _po["stage"] == "watch" else 0), False
                 if _po["stage"] == "watch":
                     reasons["رسیدن_به_بیس_۱۵دقیقه"] += 1
             pending.append(_po)
@@ -2475,6 +2553,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 if (_zz.direction == "BUY" and c_prev < _zz.distal) or (_zz.direction == "SELL" and c_prev > _zz.distal):
                     p["active"] = False
                     p["cancel"] = "لغو: کندل ۱۵دقیقه پشت بیس بسته شد"
+                    _zz.ltf_dead = True
                     reasons["لغو_شکست_بیس_با_کلوز_۱۵دقیقه"] += 1
                     set_final(zone_df, _zz.zone_id, "لغو شد", "کندل پشت بیس بسته شد", t, idx=z_idx)
                     log_event(events, t, symbol, _zz.zone_id, "Canceled", "ZoneBreached")
@@ -3753,7 +3832,9 @@ def write_simple_excel(sw, runs, frames):
             ("ورود_انجام_شد", "معامله"), ("ورود_بازار_بعد_از_تأیید", "ورود_با_قیمت_بازار"),
             ("لغو_شکست_بیس_با_کلوز_۱۵دقیقه", "لغو_کلوز_پشت_بیس"),
             ("لغو_دور_شدن_بدون_ورود", "لغو_دور_شدن_بدون_ورود"),
-            ("لغو_استاپ_۱دقیقه_کوچک", "لغو_استاپ_۱دقیقه_کوچک")]
+            ("لغو_استاپ_۱دقیقه_کوچک", "لغو_استاپ_۱دقیقه_کوچک"),
+            ("تست_دوم_به_بعد", "رسیدن_دوباره_(تست_دوم)"), ("لغو_تست_بیش_از_مجاز", "لغو_تست_بیش_از_مجاز"),
+            ("بازگشت_برای_تست_بعد", "منتظر_تست_بعد_از_معامله")]
     funnel = []
     for name, results, _book, _tm in runs:
         tot = {k: 0 for k, _ in keys}
@@ -4051,7 +4132,8 @@ def main():
           f"فاصله تا زون مخالف {'≥ ' + str(OPP_ZONE_ROOM_R) + 'R' if OPP_ZONE_ROOM_R else 'خاموش'} | "
           f"فیبو {('بای زیر ' + str(FIB_BUY_MAX) + '، سل بالای ' + str(FIB_SELL_MIN)) if (FIB_FILTER and _has_big) else 'خاموش (تایم روزانه ندارد)' if FIB_FILTER else 'خاموش'} | "
           f"سی‌پی پشت‌سرهم: {MAX_CONSECUTIVE_CP if MAX_CONSECUTIVE_CP else 'خاموش'}")
-    print(f"   تأیید ۱دقیقه: اوردرِ بعد از تأیید با دور شدن {LTF_CANCEL_R:g}R بدون پر شدن لغو | "
+    print(f"   تأیید ۱دقیقه: تست مجاز {LTF_MAX_TESTS} (تست تازه = برگشت بعد از {LTF_TEST_AWAY_R:g}R دور شدن) | "
+          f"اوردرِ بعد از تأیید با دور شدن {LTF_CANCEL_R:g}R بدون پر شدن لغو | "
           f"ورود روی بیس ۱دقیقه فقط اگر استاپ ≥ {LTF_MIN_RISK_SPREAD:g}× اسپرد")
     print(f"   بازه‌ی معامله: {BACKTEST_START.date()} تا {BACKTEST_END.date() if BACKTEST_END is not None else 'پایان دیتا'} "
           f"(گرم‌کردن {WARMUP_DAYS} روز قبلش)")
@@ -4132,7 +4214,9 @@ def main():
         if LTF_MODE and all(fr[3] is None for fr in frames.values()):
             raise ValueError("دیتای ۱دقیقه داخل ZIPها نیست (فایل -1.csv) ولی بک‌تست با تأیید ۱دقیقه است. "
                              "export_data را با تایم M1 اجرا کن و ZIPهای تازه را در پوشه‌ی 0 بگذار.")
-        print(f"   [اجرای اصلی] {LTF_RUN_NAMES.get(LTF_MODE, LTF_MODE)} ...", flush=True)
+        _main_name = f"{LTF_RUN_NAMES.get(LTF_MODE, LTF_MODE)} — " + ("فقط تست اول" if LTF_MAX_TESTS == 1
+                                                                        else f"تا تست {LTF_MAX_TESTS}")
+        print(f"   [اجرای اصلی] {_main_name} ...", flush=True)
         live_results, live_book, live_alloc = portfolio_live_replay(
             frames, spreads, entry_off=DEFAULT_ENTRY_OFF, sl_off=DEFAULT_SL_OFF,
             rr=DEFAULT_RR, manage_mode=DEFAULT_MANAGE, min_risk_atr=DEFAULT_MIN_RISK_ATR,
@@ -4145,7 +4229,7 @@ def main():
     design_sheets, design_rows = [], []
     simple_runs = []
     if LIVE_MODE and live_book is not None:
-        simple_runs.append((LTF_RUN_NAMES.get(LTF_MODE, str(LTF_MODE)), live_results, live_book, TREND_MODE))
+        simple_runs.append((_main_name, live_results, live_book, TREND_MODE))
     if DESIGN_TESTS and LIVE_MODE and live_book is not None and DESIGN_VARIANTS:
         _t0 = max(pd.Timestamp(d0), BACKTEST_START) if _starts else BACKTEST_START
         mid_t = _t0 + (pd.Timestamp(d1_) - _t0) / 2 if _starts else BACKTEST_START
