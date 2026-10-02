@@ -65,8 +65,7 @@ LTF_TEST_AWAY_R = 1.0          # فقط تست اول: اگر قیمت ۱R دو�
 LTF_CANCEL_R = 7.0             # اوردرِ بعد از چاک اگر پر نشد و قیمت 7R دور شد → لغو
 
 # ---- حساب و هزینه‌ها ----
-RISK_PER_TRADE = 0.01          # ریسک هر معامله: ۱٪ ...
-RESERVE = 0.15                 # ... از ۸۵٪ اکویتی (۱۵٪ رزرو)
+RISK_PER_TRADE = 0.01          # ریسک هر معامله: ۱٪ اکویتی کل حساب
 START_EQUITY = 100000.0
 SWAP_SPREAD_MULT_PER_NIGHT = 0.2   # سواپ ≈ ۲۰٪ اسپرد برای هر شب نگهداری | کمیسیون: ندارد (دموی MetaQuotes)
 # اسپرد: از spreads.csv کنار دیتا (میانه‌ی تیک‌های متاتریدر خودت)؛ اگر نبود، این جدول تقریبی (برحسب قیمت)
@@ -643,7 +642,7 @@ class AccountBook:
         self.max_dd = 0.0
 
     def risk_amount(self):
-        return self.equity * (1.0 - RESERVE) * RISK_PER_TRADE
+        return self.equity * RISK_PER_TRADE
 
     def apply_result(self, risk_amt, result_r):
         self.equity += float(risk_amt) * float(result_r)
@@ -1096,35 +1095,11 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     Z_BUY = np.array([z.direction == "BUY" for z in zones], dtype=bool)
     Z_SUP = np.array([pd.Timestamp(z.superseded_time).value if z.superseded_time is not None
                       else np.iinfo(np.int64).max for z in zones], dtype=np.int64)
-    Z_TC = np.zeros(nz, dtype=np.int64)            # تعداد لمس با کندل ۱۵دقیقه
-    Z_LTI = np.full(nz, -10 ** 9, dtype=np.int64)  # کندل آخرین لمس
-    Z_CAT = np.full(nz, 999, dtype=np.int64)       # کندل‌های بدون لمس بعد از آخرین لمس
+    Z_TOUCHED = np.zeros(nz, dtype=bool)           # کندل ۱۵دقیقه به بیس خورد (پیش از آماده شدن)
+    Z_TOUCH_I = np.full(nz, -1, dtype=np.int64)    # کندل آن لمس
     Z_USED = np.zeros(nz, dtype=bool)              # آماده شد، رد شد یا پیش از بازه لمس شد → دیگر بررسی نمی‌شود
     Z_LAST = np.zeros(nz, dtype=np.int8)           # قیف: آخرین دلیل آماده‌نشدن
     Z_PLACED = np.zeros(nz, dtype=bool)            # قیف: آماده‌ی معامله شد
-
-    def touch_step(k, i, t, h, l, c_prev):
-        """جایگزینی/شکست/لمس یک بیس در یک کندل؛ True = بیس دیگر معتبر نیست.
-        - بیس جدیدِ هم‌پوشان جایش را گرفت، یا (پیش از آماده شدن) کندل قبلی پشت دیستال بسته شد → باطل
-        - لمس دوباره بعد از دست‌کم ۳ کندل بدون لمس (تا ۵۰ کندل) = لمس دوم؛ اگر تا ۵۰ کندل بعد از
-          لمس اول لمس دومی نیامد → باطل (و اوردرش لغو)"""
-        if Z_SUP[k] <= t.value or (not Z_USED[k] and (c_prev < Z_DIST[k] if Z_BUY[k] else c_prev > Z_DIST[k])):
-            cancel_orders_of_zone(zones[k])
-            return True
-        if h >= Z_LO[k] and l <= Z_HI[k]:
-            if Z_TC[k] == 0:
-                Z_TC[k], Z_LTI[k], Z_CAT[k] = 1, i, 0
-            elif Z_CAT[k] >= 3 and (i - Z_LTI[k]) <= 50:
-                Z_TC[k] += 1
-                Z_LTI[k], Z_CAT[k] = i, 0
-            else:
-                Z_CAT[k] = 0
-        elif Z_TC[k] > 0:
-            Z_CAT[k] += 1
-        if Z_TC[k] == 1 and (i - Z_LTI[k]) > 50:
-            cancel_orders_of_zone(zones[k])
-            return True
-        return False
 
     t15 = df15["time"].to_numpy()
     o15 = df15["open"].to_numpy(dtype=float); h15 = df15["high"].to_numpy(dtype=float)
@@ -1170,30 +1145,28 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         if zptr > z0:
             live_k = np.concatenate([live_k, np.arange(z0, zptr, dtype=np.int64)])
 
-        # ---------- لمس/جایگزینی/شکست (فقط بیس‌هایی که در این کندل اتفاقی برایشان می‌افتد) ----------
+        # ---------- باطل شدن و لمس بیس‌ها ----------
+        # باطل: بیس جدیدِ هم‌پوشان جایش را گرفت، یا (پیش از آماده شدن) کندل قبلی پشت دیستال بسته شد
         if len(live_k):
             lk = live_k
-            att = (h >= Z_LO[lk]) & (l <= Z_HI[lk])
-            att |= Z_SUP[lk] <= t.value
-            att |= np.where(Z_BUY[lk], c_prev < Z_DIST[lk], c_prev > Z_DIST[lk]) & ~Z_USED[lk]
-            att |= (Z_TC[lk] == 1) & ((i - Z_LTI[lk]) > 50)
-            Z_CAT[lk[(~att) & (Z_TC[lk] > 0)]] += 1
-            dead = [k for k in lk[att] if touch_step(k, i, t, h, l, c_prev)]
-            if dead:
-                live_k = live_k[~np.isin(live_k, dead)]
+            dead = (Z_SUP[lk] <= t.value) | (np.where(Z_BUY[lk], c_prev < Z_DIST[lk], c_prev > Z_DIST[lk])
+                                              & ~Z_USED[lk])
+            for k in lk[dead]:
+                cancel_orders_of_zone(zones[k])
+            first = lk[(h >= Z_LO[lk]) & (l <= Z_HI[lk]) & ~Z_TOUCHED[lk] & ~Z_USED[lk] & ~dead]
+            Z_TOUCHED[first], Z_TOUCH_I[first] = True, i
+            if dead.any():
+                live_k = lk[~dead]
 
         if t < bt_start:
             # گرم‌کردن: بیسی که پیش از شروع بازه لمس شده، مصرف‌شده است
-            Z_USED[live_k[Z_TC[live_k] > 0]] = True
+            Z_USED[live_k[Z_TOUCHED[live_k]]] = True
             continue
 
         # ---------- بیس‌های لمس‌شده (تصمیم از کندل بعد از لمس، مثل لایو) ----------
         touched = []
-        for k in live_k[(Z_TC[live_k] > 0) & ~Z_USED[live_k]]:
-            if Z_LTI[k] == i:
-                continue
-            if Z_TC[k] >= 3:
-                Z_USED[k] = True
+        for k in live_k[Z_TOUCHED[live_k] & ~Z_USED[live_k]]:
+            if Z_TOUCH_I[k] == i:
                 continue
             z = zones[k]
             if z.direction not in allowed:
@@ -1207,7 +1180,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
 
         # ---------- بیس‌های لمس‌نشده (اگر الان مجاز نیستند، بعداً دوباره بررسی می‌شوند) ----------
         untouched = []
-        lu = live_k[(Z_TC[live_k] == 0) & ~Z_USED[live_k]]
+        lu = live_k[~Z_TOUCHED[live_k] & ~Z_USED[live_k]]
         if len(lu):
             Z_LAST[lu[np.where(Z_BUY[lu], "BUY" not in allowed, "SELL" not in allowed)]] = 1
         if allowed:
@@ -1754,7 +1727,7 @@ def main():
     print(f"   تأیید ۱دقیقه: فقط تست اول (تست تازه = برگشت بعد از {LTF_TEST_AWAY_R:g}R دور شدن) | بیس‌های چسبیده "
           f"≤{CHOCH_CLUSTER_MAX_BARS} کندل و ≤{CHOCH_CLUSTER_GAP_ATR:g}×ATR | اوردر پرنشده با {LTF_CANCEL_R:g}R لغو")
     print(f"   ورود +{ENTRY_OFF * 100:.0f}٪ | استاپ {SL_OFF * 100:.0f}٪ پشت دیستال | تارگت {RR:g}R | "
-          f"نصف حجم در {PARTIAL_AT_R:g}R | ریسک {RISK_PER_TRADE * 100:g}٪ از {100 - RESERVE * 100:g}٪ اکویتی | کمیسیون ندارد")
+          f"نصف حجم در {PARTIAL_AT_R:g}R | ریسک {RISK_PER_TRADE * 100:g}٪ حساب | کمیسیون ندارد")
 
     frames = {}
     for sym, src in sources.items():
