@@ -1,0 +1,1046 @@
+<title>حسین شیردل | Hossein Shirdel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Vazirmatn:wght@400;500;700;800;900&display=swap">
+<script>
+/* language before first paint: #en / #fa link, then remembered choice, then Persian */
+(function () {
+  var l = "fa";
+  try { var s = localStorage.getItem("hs-lang"); if (s === "en" || s === "fa") l = s; } catch (e) {}
+  var h = (location.hash || "").replace("#", "");
+  if (h === "en" || h === "fa") l = h;
+  var r = document.documentElement;
+  r.setAttribute("data-lang", l); r.lang = l; r.dir = l === "fa" ? "rtl" : "ltr";
+})();
+</script>
+<style>
+/* Layout: a night trading desk. Ink-blue ground, gold (the bot trades XAUUSD) as the one accent,
+   green/red only where they mean up/down. Narrow reading column, wide rows for charts and the phone. */
+:root {
+  color-scheme: dark;
+  --ink: #0c1120;
+  --ink-2: #121a2b;
+  --ink-3: #192236;
+  --rule: #25304a;
+  --fg: #e9ecf3;
+  --fg-2: #b9c1d2;
+  --muted: #8a95ab;
+  --gold: #e0b44c;
+  --gold-soft: rgba(224, 180, 76, .14);
+  --up: #26a69a;
+  --down: #ef5350;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --bubble: #1a2335;
+  --f-fa: "Vazirmatn", "Tahoma", "Segoe UI", sans-serif;
+  --f-en: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-cond: "IBM Plex Sans Condensed", "IBM Plex Sans", "Arial Narrow", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "Consolas", monospace;
+  --t-xs: .78rem; --t-s: .88rem; --t-m: 1rem; --t-l: 1.18rem; --t-xl: 1.5rem; --t-2xl: 2.1rem; --t-3xl: clamp(2.2rem, 5.4vw, 3.6rem);
+  --nav-h: 56px;
+  --wrap: 1120px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--ink); color: var(--fg); font-family: var(--f-fa); font-size: var(--t-m); line-height: 1.85; -webkit-font-smoothing: antialiased; }
+:root[data-lang="en"] body { font-family: var(--f-en); line-height: 1.65; }
+:root:not([data-lang="en"]) .en, :root[data-lang="en"] .fa { display: none !important; }
+a { color: var(--gold); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; border-radius: 4px; }
+.wrap { max-width: var(--wrap); margin-inline: auto; padding-inline: 20px; }
+.num, .mono { font-family: var(--f-mono); }
+bdi { unicode-bidi: isolate; }
+h1, h2, h3 { text-wrap: balance; margin: 0; font-weight: 800; }
+:root[data-lang="en"] h1, :root[data-lang="en"] h2, :root[data-lang="en"] h3 { font-family: var(--f-cond); font-weight: 700; letter-spacing: -.01em; }
+p { margin: 0; }
+.lead { color: var(--fg-2); font-size: var(--t-l); max-width: 62ch; }
+.eyebrow { color: var(--gold); font-size: var(--t-s); font-weight: 700; display: inline-flex; align-items: center; gap: .55em; }
+:root[data-lang="en"] .eyebrow { font-family: var(--f-mono); font-weight: 500; text-transform: uppercase; letter-spacing: .12em; font-size: var(--t-xs); }
+.eyebrow::before { content: ""; inline-size: 18px; block-size: 2px; background: var(--gold); }
+
+/* ---------- nav ---------- */
+.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; background: rgba(12, 17, 32, .9); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-block-end: 1px solid var(--rule); }
+.nav .wrap { display: flex; align-items: center; gap: 18px; block-size: var(--nav-h); }
+.brand { font-weight: 800; color: var(--fg); font-size: 1.05rem; white-space: nowrap; display: flex; align-items: center; gap: 10px; }
+.brand:hover { text-decoration: none; }
+.brand .mark { inline-size: 12px; block-size: 22px; position: relative; flex: none; }
+.brand .mark::before { content: ""; position: absolute; inset-inline-start: 5px; inset-block: 0; inline-size: 2px; background: var(--gold); }
+.brand .mark::after { content: ""; position: absolute; inset-inline: 1px; inset-block: 5px 6px; background: var(--gold); border-radius: 2px; }
+.links { display: flex; gap: 4px; margin-inline-start: auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.links::-webkit-scrollbar { display: none; }
+.links a { color: var(--fg-2); font-size: var(--t-s); padding: 6px 10px; border-radius: 8px; white-space: nowrap; }
+.links a:hover { color: var(--fg); background: var(--ink-3); text-decoration: none; }
+.lang { flex: none; font: 600 var(--t-s)/1 var(--f-mono); color: var(--ink); background: var(--gold); border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+.lang:hover { background: #f0c75f; }
+@media (max-width: 860px) { .links { display: none; } .lang { margin-inline-start: auto; } }
+
+section { scroll-margin-top: calc(var(--nav-h) + 12px); }
+.sec { padding-block: 88px 24px; }
+.sec-head { display: grid; gap: 14px; margin-block-end: 36px; }
+.sec-head h2 { font-size: var(--t-2xl); line-height: 1.35; }
+:root[data-lang="en"] .sec-head h2 { line-height: 1.15; font-size: 2.3rem; }
+
+/* ---------- hero ---------- */
+.hero { padding-block: 72px 40px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 26px 56px; align-items: start; }
+.hero-main { display: grid; gap: 26px; min-width: 0; }
+.status { background: var(--ink-2); border: 1px solid var(--rule); border-radius: 16px; padding: 18px 18px 14px; display: grid; gap: 4px; margin-block-start: 64px; }
+.status h2 { font-size: var(--t-s); color: var(--muted); font-weight: 600; margin-block-end: 6px; }
+:root[data-lang="en"] .status h2 { font-family: var(--f-mono); font-weight: 500; text-transform: uppercase; letter-spacing: .1em; font-size: var(--t-xs); }
+.status .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding-block: 9px; border-block-end: 1px solid var(--rule); font-size: .95rem; }
+.status .row:last-of-type { border-block-end: 0; }
+.pill { font-size: var(--t-xs); border-radius: 999px; padding: 3px 10px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pill::before { content: ""; inline-size: 7px; block-size: 7px; border-radius: 50%; background: currentColor; }
+.pill.ok { color: var(--up); background: rgba(38, 166, 154, .12); }
+.pill.wip { color: var(--gold); background: var(--gold-soft); }
+.status .foot { color: var(--muted); font-size: var(--t-xs); padding-block-start: 8px; }
+@media (max-width: 1000px) { .hero { grid-template-columns: minmax(0, 1fr); } .status { margin-block-start: 0; max-inline-size: 520px; } }
+.hero h1 { font-size: var(--t-3xl); line-height: 1.3; font-weight: 900; max-width: 18ch; }
+:root[data-lang="en"] .hero h1 { line-height: 1.04; font-size: clamp(2.5rem, 6.2vw, 4.3rem); max-width: 16ch; }
+.hero h1 .g { color: var(--gold); }
+.facts { display: flex; flex-wrap: wrap; gap: 10px 28px; padding-block-start: 8px; border-block-start: 1px solid var(--rule); max-width: 900px; }
+.fact { display: grid; gap: 0; min-width: 0; padding-block-start: 14px; }
+.fact b { font-family: var(--f-mono); font-weight: 500; font-size: 1.55rem; color: var(--fg); line-height: 1.3; }
+.fact span { color: var(--muted); font-size: var(--t-s); }
+:root[data-lang="fa"] .fact b, :root[data-lang="fa"] .proof b, :root[data-lang="fa"] .msg .tm { font-family: var(--f-fa); font-weight: 700; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; padding: 11px 18px; font-weight: 700; font-size: var(--t-m); border: 1px solid var(--rule); color: var(--fg); background: var(--ink-2); cursor: pointer; font-family: inherit; }
+.btn:hover { text-decoration: none; border-color: var(--gold); }
+.btn.primary { background: var(--gold); color: var(--ink); border-color: var(--gold); }
+.btn.primary:hover { background: #f0c75f; }
+
+/* ---------- journey (scroll-driven candles) ---------- */
+.journey { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+.jchart { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--nav-h) + 20px); background: var(--ink-2); border: 1px solid var(--rule); border-radius: 16px; padding: 16px 16px 12px; }
+.jchart canvas { display: block; inline-size: 100%; block-size: min(56vh, 460px); }
+.jchart .cap { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: var(--t-xs); padding-block-start: 8px; }
+.jchart .key { display: inline-flex; gap: 14px; flex-wrap: wrap; }
+.jchart .key i { display: inline-block; inline-size: 9px; block-size: 9px; border-radius: 2px; margin-inline-end: 6px; vertical-align: middle; }
+.steps { display: grid; gap: 22px; padding-block: 8px 30vh; min-width: 0; }
+.step { border: 1px solid var(--rule); border-radius: 14px; padding: 18px 20px; background: var(--ink); transition: border-color .3s, background .3s; display: grid; gap: 8px; min-width: 0; }
+.step .when { font-size: var(--t-xs); color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.step .when i { inline-size: 8px; block-size: 14px; border-radius: 2px; background: var(--up); flex: none; }
+.step.down .when i { background: var(--down); }
+.step h3 { font-size: var(--t-l); line-height: 1.5; }
+:root[data-lang="en"] .step h3 { line-height: 1.25; font-size: 1.3rem; }
+.step p { color: var(--fg-2); font-size: .97rem; }
+.step.on { border-color: var(--gold); background: var(--ink-2); }
+@media (max-width: 860px) {
+  .journey { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .jchart { top: calc(env(safe-area-inset-top, 0px) + var(--nav-h) + 8px); z-index: 5; padding: 10px 10px 8px; box-shadow: 0 14px 24px -12px rgba(0, 0, 0, .7); }
+  .jchart canvas { block-size: 26vh; min-block-size: 170px; }
+  .jchart .disc { display: none; }
+  .steps { padding-block-end: 20vh; }
+}
+
+/* ---------- system ---------- */
+.sys { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.part { grid-column: span 4; background: var(--ink-2); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.part .tag { font: 500 var(--t-xs)/1.4 var(--f-mono); color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+:root[data-lang="fa"] .part .tag { font-family: var(--f-fa); }
+.part .tag .pub { color: var(--up); }
+.part .tag .priv { color: var(--fg-2); }
+.part h3 { font-size: var(--t-l); line-height: 1.45; }
+:root[data-lang="en"] .part h3 { line-height: 1.2; font-size: 1.35rem; }
+.part p { color: var(--fg-2); font-size: .95rem; }
+.part.half { grid-column: span 6; }
+.part.guard { grid-column: span 8; grid-row: span 2; border-color: var(--gold); background: linear-gradient(180deg, var(--gold-soft), transparent 55%), var(--ink-2); gap: 14px; }
+.part.guard h3 { font-size: var(--t-xl); }
+.ekg { inline-size: 100%; block-size: 70px; display: block; }
+.ekg path { fill: none; stroke: var(--gold); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 520; stroke-dashoffset: 520; animation: beat 3.2s linear infinite; }
+.ekg .base { stroke: var(--rule); stroke-dasharray: none; animation: none; stroke-dashoffset: 0; }
+@keyframes beat { 0% { stroke-dashoffset: 520; } 70% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -520; } }
+@media (prefers-reduced-motion: reduce) { .ekg path { animation: none; stroke-dashoffset: 0; } }
+.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rules li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; color: var(--fg-2); font-size: .95rem; }
+.rules li b { color: var(--fg); font-weight: 600; }
+.rules li::before { content: ""; inline-size: 6px; block-size: 6px; margin-block-start: .75em; border-radius: 50%; background: var(--gold); }
+:root[data-lang="en"] .rules li::before { margin-block-start: .6em; }
+.note { border-inline-start: 2px solid var(--gold); padding-inline-start: 14px; color: var(--fg-2); font-size: .95rem; }
+.flow { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 16px; border: 1px dashed var(--rule); border-radius: 12px; color: var(--muted); font-size: var(--t-s); }
+.flow b { color: var(--fg); font-weight: 600; background: var(--ink-3); border-radius: 8px; padding: 3px 10px; }
+.flow .arr { color: var(--gold); font-family: var(--f-mono); }
+:root[data-lang="fa"] .flow .arr { transform: scaleX(-1); display: inline-block; }
+@media (max-width: 960px) { .part, .part.half, .part.guard { grid-column: 1 / -1; grid-row: auto; } }
+@media (min-width: 961px) and (max-width: 1100px) { .part { grid-column: span 6; } .part.guard { grid-column: 1 / -1; } }
+
+/* ---------- challenge ---------- */
+.story { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px 48px; }
+.story p { color: var(--fg-2); }
+.story p b { color: var(--fg); }
+@media (max-width: 860px) { .story { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--ink-2); border: 1px solid var(--rule); border-radius: 16px; padding: 22px; min-width: 0; }
+.chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 10px 24px; margin-block-end: 10px; }
+.chart-head h3 { font-size: var(--t-l); }
+.chart-head p { color: var(--muted); font-size: var(--t-s); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: var(--t-s); color: var(--fg-2); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend svg { flex: none; }
+.cmp { position: relative; direction: ltr; }
+.cmp svg { display: block; inline-size: 100%; block-size: auto; overflow: visible; }
+.cmp text { fill: var(--muted); font-size: 11px; font-family: var(--f-mono); }
+:root[data-lang="fa"] .cmp text { font-family: var(--f-fa); }
+.cmp .lbl { font-size: 12px; font-weight: 600; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); border: 1px solid var(--rule); border-radius: 10px; padding: 8px 10px; font-size: var(--t-xs); color: var(--fg-2); min-inline-size: 170px; box-shadow: 0 8px 20px rgba(0, 0, 0, .45); display: grid; gap: 3px; }
+:root[data-lang="fa"] .tip { direction: rtl; }
+.tip .row { display: grid; grid-template-columns: 14px auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.tip .row b { font-family: var(--f-mono); color: var(--fg); font-weight: 500; }
+.tip .row i { block-size: 2px; inline-size: 14px; display: block; }
+.tip .t { color: var(--muted); }
+details.tbl { margin-block-start: 12px; }
+details summary { cursor: pointer; color: var(--gold); font-size: var(--t-s); font-weight: 600; }
+.tscroll { overflow-x: auto; margin-block-start: 10px; }
+table { border-collapse: collapse; inline-size: 100%; font-size: var(--t-s); }
+th, td { text-align: start; padding: 8px 10px; border-block-end: 1px solid var(--rule); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; }
+td.n { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.proofs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-block-start: 22px; }
+.proof { border-block-start: 2px solid var(--rule); padding-block-start: 12px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.proof b { font-family: var(--f-mono); font-weight: 500; font-size: 1.5rem; color: var(--fg); line-height: 1.3; }
+.proof b s { color: var(--muted); text-decoration-color: var(--down); }
+.proof span { color: var(--fg-2); font-size: var(--t-s); }
+@media (max-width: 960px) { .proofs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .proofs { grid-template-columns: minmax(0, 1fr); } }
+.bugs td { white-space: normal; min-inline-size: 120px; }
+.bugs td:nth-child(3) { min-inline-size: 260px; }
+.sev { font: 500 var(--t-xs)/1 var(--f-mono); padding: 4px 8px; border-radius: 6px; background: var(--ink-3); color: var(--fg-2); white-space: nowrap; display: inline-block; }
+.sev.hi { color: #ffb4b0; background: rgba(239, 83, 80, .14); }
+.st { white-space: nowrap; font-size: var(--t-xs); }
+.st.ok { color: var(--up); }
+.st.wip { color: var(--gold); }
+
+/* ---------- logs ---------- */
+.logs { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 40px; align-items: start; }
+.logs .txt { display: grid; gap: 18px; color: var(--fg-2); min-width: 0; }
+.logs .txt b { color: var(--fg); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips span { font-size: var(--t-xs); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 10px; color: var(--fg-2); }
+.phone { border: 1px solid var(--rule); border-radius: 30px; background: #070b14; padding: 10px; box-shadow: 0 30px 60px -30px rgba(0, 0, 0, .8); max-inline-size: 400px; inline-size: 100%; justify-self: center; }
+.screen { border-radius: 22px; overflow: hidden; background: var(--ink-2); direction: rtl; }
+:root[data-lang="en"] .screen { direction: ltr; }
+.screen .bar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--ink-3); border-block-end: 1px solid var(--rule); }
+.screen .av { inline-size: 36px; block-size: 36px; border-radius: 50%; background: var(--gold); color: var(--ink); display: grid; place-items: center; font-weight: 800; flex: none; font-family: var(--f-fa); }
+.screen .who { display: grid; line-height: 1.35; }
+.screen .who b { font-family: var(--f-fa); font-size: .95rem; }
+.screen .who span { font-size: var(--t-xs); color: var(--up); font-family: var(--f-fa); }
+.feed { block-size: 520px; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; overscroll-behavior: contain; }
+.msg { background: var(--bubble); border-radius: 14px 14px 4px 14px; padding: 9px 12px 6px; font-size: .86rem; line-height: 1.75; color: var(--fg); max-inline-size: 94%; align-self: flex-start; font-family: var(--f-fa); }
+.msg.en-log { direction: ltr; border-radius: 14px 14px 14px 4px; font-family: var(--f-en); line-height: 1.55; }
+.msg .ln { display: block; }
+.msg .tm { display: block; text-align: end; font-size: .7rem; color: var(--muted); font-family: var(--f-mono); margin-block-start: 2px; }
+.msg.new { animation: pop .45s ease-out; }
+@keyframes pop { from { transform: translateY(10px); opacity: .2; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .msg.new { animation: none; } .feed { scroll-behavior: auto; } }
+.feed-ctl { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px 12px; color: var(--muted); font-size: var(--t-xs); }
+.feed-ctl button { font: inherit; color: var(--gold); background: none; border: 1px solid var(--rule); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+@media (max-width: 960px) { .logs { grid-template-columns: minmax(0, 1fr); } .feed { block-size: 460px; } }
+
+/* ---------- method ---------- */
+.method { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; }
+.method .txt { display: grid; gap: 16px; color: var(--fg-2); align-content: start; }
+.method .txt b { color: var(--fg); }
+.loop { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: s; }
+.loop li { counter-increment: s; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; padding-block: 14px; border-block-end: 1px solid var(--rule); }
+.loop li::before { content: counter(s); font-family: var(--f-mono); color: var(--gold); font-size: 1.3rem; line-height: 1.4; }
+:root[data-lang="fa"] .loop li::before { content: counter(s, persian); font-family: var(--f-fa); }
+.loop li b { display: block; color: var(--fg); }
+.loop li span { color: var(--fg-2); font-size: .95rem; }
+@media (max-width: 860px) { .method { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- tools ---------- */
+.tools { display: grid; gap: 16px; }
+.tool { background: var(--ink-2); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; display: grid; gap: 12px; min-width: 0; }
+.tool > *, .tool details { min-width: 0; max-inline-size: 100%; }
+.tool .top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.tool h3 { font-size: var(--t-l); }
+:root[data-lang="en"] .tool h3 { font-size: 1.35rem; }
+.tool .file { font: 500 var(--t-s)/1.4 var(--f-mono); color: var(--gold); direction: ltr; }
+.tool p { color: var(--fg-2); font-size: .95rem; }
+.tool .tested { font-size: var(--t-s); color: var(--fg-2); display: flex; gap: 8px; }
+.tool .tested::before { content: "✓"; color: var(--up); font-weight: 700; }
+.tool .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.tool details > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--rule); border-radius: 10px; padding: 8px 14px; color: var(--fg); font-weight: 600; }
+.tool details > summary::-webkit-details-marker { display: none; }
+.tool details > summary:hover { border-color: var(--gold); }
+.tool details[open] > summary { border-color: var(--gold); }
+.copy { font-family: inherit; font-weight: 600; font-size: var(--t-s); line-height: 1.2; color: var(--ink); background: var(--gold); border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+.copy:hover { background: #f0c75f; }
+.copied { color: var(--up); font-size: var(--t-s); }
+pre.code { direction: ltr; text-align: left; margin: 12px 0 0; max-block-size: 560px; overflow: auto; background: #080c17; border: 1px solid var(--rule); border-radius: 12px; padding: 16px; font: 400 .8rem/1.6 "IBM Plex Mono", "Vazirmatn", ui-monospace, monospace; color: #d7dceb; tab-size: 4; }
+pre.code code { font: inherit; white-space: pre; }
+.hljs-comment { color: #7f8aa3; }
+.hljs-string { color: #9fd6a8; }
+.hljs-keyword, .hljs-built_in { color: #f0c75f; }
+.hljs-number, .hljs-literal { color: #f29b6b; }
+.hljs-title, .hljs-title.function_ { color: #7fb6f5; }
+.hljs-meta { color: #c59cf0; }
+
+/* ---------- work with me ---------- */
+.hire { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 40px; }
+.hire .txt { display: grid; gap: 16px; color: var(--fg-2); align-content: start; }
+.hire .txt b { color: var(--fg); }
+.terms { display: grid; gap: 0; border-block-start: 1px solid var(--rule); }
+.terms div { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 14px; padding-block: 12px; border-block-end: 1px solid var(--rule); }
+.terms dt, .terms .k { color: var(--muted); font-size: var(--t-s); }
+.terms .v { color: var(--fg); }
+.mail { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--ink-2); border: 1px solid var(--gold); border-radius: 14px; padding: 16px 18px; }
+.mail .addr { font: 500 1.05rem/1.4 var(--f-mono); color: var(--fg); direction: ltr; user-select: all; word-break: break-all; }
+@media (max-width: 860px) { .hire { grid-template-columns: minmax(0, 1fr); } .terms div { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+footer { margin-block-start: 90px; border-block-start: 1px solid var(--rule); padding-block: 26px 40px; color: var(--muted); font-size: var(--t-s); }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 24px; }
+</style>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span><span class="fa">حسین شیردل</span><span class="en">Hossein Shirdel</span></a>
+    <nav class="links" aria-label="sections">
+      <a href="#journey"><span class="fa">مسیر</span><span class="en">Journey</span></a>
+      <a href="#system"><span class="fa">سیستم</span><span class="en">System</span></a>
+      <a href="#challenge"><span class="fa">بکتست فریبنده</span><span class="en">The backtest</span></a>
+      <a href="#logs"><span class="fa">لاگ‌ها</span><span class="en">Logs</span></a>
+      <a href="#method"><span class="fa">روش کار</span><span class="en">Method</span></a>
+      <a href="#tools"><span class="fa">ابزارها</span><span class="en">Tools</span></a>
+      <a href="#hire"><span class="fa">همکاری</span><span class="en">Work with me</span></a>
+    </nav>
+    <button class="lang" id="langBtn" type="button" aria-label="Switch language"><span class="fa">EN</span><span class="en">فا</span></button>
+  </div>
+</header>
+
+<main id="top">
+  <!-- ================= hero ================= -->
+  <section class="wrap hero">
+   <div class="hero-main">
+    <span class="eyebrow"><span class="fa">سیستم معامله‌گری خودکار · ساخته‌شده با هوش مصنوعی</span><span class="en">Automated trading system · built with AI</span></span>
+    <h1>
+      <span class="fa">با هوش مصنوعی، <span class="g">سیستم واقعی</span> می‌سازم.</span>
+      <span class="en">I build <span class="g">real systems</span> with AI.</span>
+    </h1>
+    <p class="lead">
+      <span class="fa">من حسین شیردل هستم. حدود یک سال است که با مدل‌های هوش مصنوعی روز دنیا یک سیستم پنج‌بخشی برای معامله‌ی خودکار در متاتریدر ۵ طراحی می‌کنم و می‌سازم: از دانلود داده و اندازه‌گیری هزینه‌ها تا بکتست، ربات معامله‌گر و نگهبانی که شبانه‌روز مراقب ربات است. در این مسیر بزرگ‌ترین خطای پروژه را خودم پیدا کردم و سیستم را از نو ساختم.</span>
+      <span class="en">I'm Hossein Shirdel. For about a year I have been designing and building, with today's leading AI models, a five-part system for automated trading on MetaTrader 5: data download and cost measurement, a backtester, a trading robot, and a watchdog that looks after the robot day and night. Along the way I found the project's biggest flaw myself and rebuilt the system from the ground up.</span>
+    </p>
+    <div class="facts">
+      <div class="fact"><b><span class="fa">۵</span><span class="en">5</span></b><span><span class="fa">بخش، یک سیستم</span><span class="en">parts, one system</span></span></div>
+      <div class="fact"><b><span class="fa">۶٬۵۰۰+</span><span class="en">6,500+</span></b><span><span class="fa">خط کد پایتون</span><span class="en">lines of Python</span></span></div>
+      <div class="fact"><b><span class="fa">۳ ماه</span><span class="en">3 months</span></b><span><span class="fa">اجرای زنده روی حساب دمو</span><span class="en">running live on a demo account</span></span></div>
+      <div class="fact"><b><span class="fa">۶ سال</span><span class="en">6 years</span></b><span><span class="fa">داده‌ی یک‌دقیقه‌ای برای بکتست</span><span class="en">of 1-minute data for backtests</span></span></div>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="#journey"><span class="fa">مسیر را ببینید</span><span class="en">See the journey</span></a>
+      <a class="btn" href="#hire"><span class="fa">همکاری با من</span><span class="en">Work with me</span></a>
+    </div>
+   </div>
+    <aside class="status" aria-label="status">
+      <h2><span class="fa">وضعیت امروز سیستم</span><span class="en">System status today</span></h2>
+      <div class="row"><span><span class="fa">ربات معامله‌گر</span><span class="en">Trading robot</span></span><span class="pill wip"><span class="fa">در بازسازی</span><span class="en">rebuilding</span></span></div>
+      <div class="row"><span><span class="fa">بکتستر</span><span class="en">Backtester</span></span><span class="pill wip"><span class="fa">بکتست دوباره</span><span class="en">re-testing</span></span></div>
+      <div class="row"><span><span class="fa">نگهبان</span><span class="en">Watchdog</span></span><span class="pill ok"><span class="fa">آزموده</span><span class="en">tested</span></span></div>
+      <div class="row"><span><span class="fa">دانلودر تاریخچه</span><span class="en">History downloader</span></span><span class="pill ok"><span class="fa">آزموده</span><span class="en">tested</span></span></div>
+      <div class="row"><span><span class="fa">اسپردسنج</span><span class="en">Spread meter</span></span><span class="pill ok"><span class="fa">آزموده</span><span class="en">tested</span></span></div>
+      <p class="foot"><span class="fa">قدم بعدی: بکتست ۶ساله روی داده‌ی یک‌دقیقه‌ای با موتور جدید.</span><span class="en">Next step: a 6-year backtest on 1-minute data with the new engine.</span></p>
+    </aside>
+  </section>
+
+  <!-- ================= journey ================= -->
+  <section class="wrap sec" id="journey">
+    <div class="sec-head">
+      <span class="eyebrow"><span class="fa">مسیر</span><span class="en">Journey</span></span>
+      <h2><span class="fa">از معامله‌ی دستی تا سیستم خودکار</span><span class="en">From manual trading to an automated system</span></h2>
+      <p class="lead"><span class="fa">با پایین رفتن صفحه، نمودار کنار متن رشد می‌کند. نمودار نمایشی است: هر کندل یک قدم از مسیر است، سبزها پیشرفت و قرمزها شکست‌ها؛ نه سود واقعی.</span><span class="en">As you scroll, the chart beside the story grows. It is illustrative: each candle is a step of the journey, green for progress and red for setbacks, not real profit.</span></p>
+    </div>
+    <div class="journey">
+      <figure class="jchart" style="margin:0">
+        <canvas id="jc" aria-label="Illustrative chart of the journey"></canvas>
+        <figcaption class="cap">
+          <span class="key"><span><i style="background:var(--up)"></i><span class="fa">پیشرفت</span><span class="en">progress</span></span><span><i style="background:var(--down)"></i><span class="fa">شکست</span><span class="en">setback</span></span><span><i style="background:var(--gold);block-size:2px"></i><span class="fa">روند یادگیری</span><span class="en">learning curve</span></span></span>
+          <span class="disc"><span class="fa">نمودار نمایشی، نه سود واقعی</span><span class="en">Illustrative, not real profit</span></span>
+        </figcaption>
+      </figure>
+      <div class="steps" id="steps">
+        <article class="step" data-m="0">
+          <div class="when"><i></i><span class="fa">نوروز ۱۴۰۳</span><span class="en">March 2024</span></div>
+          <h3><span class="fa">ورود به بازار</span><span class="en">Into the markets</span></h3>
+          <p><span class="fa">با دیدن معامله‌گرها در شبکه‌های اجتماعی وارد بازار شدم و تصمیم گرفتم این کار شغل آینده‌ام باشد.</span><span class="en">Traders on social media drew me into the markets, and I decided this would be my career.</span></p>
+        </article>
+        <article class="step" data-m="1">
+          <div class="when"><i></i><span class="fa">۱۴۰۳ تا ۱۴۰۴</span><span class="en">2024 to 2025</span></div>
+          <h3><span class="fa">یک سال تمرین هر روز</span><span class="en">A year of daily practice</span></h3>
+          <p><span class="fa">هر روز از صبح تا شب بکتست دستی و معامله. یک سال در دانشگاه درس خواندم و بعد آن را کنار گذاشتم تا با تمام وقت روی همین کار تمرکز کنم.</span><span class="en">Manual backtesting and trading from morning to night, every day. After one year at university I left to focus on this full time.</span></p>
+        </article>
+        <article class="step down" data-m="2">
+          <div class="when"><i></i><span class="fa">بعد از حدود یک سال و نیم</span><span class="en">About 18 months in</span></div>
+          <h3><span class="fa">مشکل اصلی استراتژی نبود</span><span class="en">The real problem was not strategy</span></h3>
+          <p><span class="fa">فهمیدم دغدغه‌ی اصلی معامله‌گرها خودکنترلی است. ترس و طمع قانون‌های خوب را هم خراب می‌کند.</span><span class="en">I learned that a trader's main struggle is self-control. Fear and greed break even good rules.</span></p>
+        </article>
+        <article class="step" data-m="3">
+          <div class="when"><i></i><span class="fa">جرقه</span><span class="en">The spark</span></div>
+          <h3><span class="fa">ترکیب معامله‌گری و هوش مصنوعی</span><span class="en">Trading meets AI</span></h3>
+          <p><span class="fa">در مصاحبه‌ای از آنتون کریل شنیدم که آینده‌ی معامله‌گری به سمت هوش مصنوعی می‌رود. تصمیم گرفتم این دو را ترکیب کنم: سیستمی که قانون‌ها را بدون احساس اجرا کند.</span><span class="en">In an interview, Anton Kreil said the future of trading belongs to AI. I decided to combine the two: a system that follows the rules without emotion.</span></p>
+        </article>
+        <article class="step" data-m="4">
+          <div class="when"><i></i><span class="fa">حدود یک سال پیش تا امروز</span><span class="en">The past year</span></div>
+          <h3><span class="fa">ساختن با هوش مصنوعی</span><span class="en">Building with AI</span></h3>
+          <p><span class="fa">قانون‌ها را دقیق تعریف می‌کنم، هوش مصنوعی کد را می‌نویسد، و من نتیجه را با واقعیت می‌سنجم. حاصلش بیش از ۶٬۵۰۰ خط کد در پنج بخش است.</span><span class="en">I define the rules precisely, AI writes the code, and I check the result against reality. The outcome is more than 6,500 lines of code in five parts.</span></p>
+        </article>
+        <article class="step" data-m="5">
+          <div class="when"><i></i><span class="fa">بازار زنده</span><span class="en">Going live</span></div>
+          <h3><span class="fa">ربات روی سرور رفت</span><span class="en">The robot goes live</span></h3>
+          <p><span class="fa">ربات روی یک سرور مجازی و یک حساب دمو در بازار واقعی شروع به کار کرد؛ در مجموع حدود سه ماه.</span><span class="en">The robot started trading on a virtual server with a demo account in real market conditions, for about three months in total.</span></p>
+        </article>
+        <article class="step down" data-m="6">
+          <div class="when"><i></i><span class="fa">قطع ناگهانی</span><span class="en">Sudden silence</span></div>
+          <h3><span class="fa">اینترنت ملی شد</span><span class="en">The national internet shutdown</span></h3>
+          <p><span class="fa">ربات بی‌هیچ دلیل ظاهری از دسترس خارج شد. بعدها فهمیدم درست همان روزهایی بود که اینترنت ایران ملی شد و من به سرور دسترسی نداشتم.</span><span class="en">The robot went silent with no visible reason. Later I realized it was exactly when Iran's internet was cut to the national network and I could not reach the server.</span></p>
+        </article>
+        <article class="step" data-m="7">
+          <div class="when"><i></i><span class="fa">راه‌حل</span><span class="en">The fix</span></div>
+          <h3><span class="fa">موتور گزارش‌دهی به پیام‌رسان داخلی</span><span class="en">A reporting engine on a domestic messenger</span></h3>
+          <p><span class="fa">موتوری ساختم که همه‌چیز را، از هر سفارش و دلیل دقیق لغوش تا سلامت ربات، کامل و خوانا به پیام‌رسان «بله» می‌فرستد؛ پیام‌رسانی که در ایران همیشه روی گوشی‌ام در دسترس است. کنارش یک نگهبان ساختم.</span><span class="en">I built an engine that sends everything, from each order and the exact reason it was cancelled to the robot's health, in full and readable form to Bale, a domestic messenger I can always reach from my phone in Iran. Next to it, I built a watchdog.</span></p>
+        </article>
+        <article class="step down" data-m="8">
+          <div class="when"><i></i><span class="fa">تابستان ۱۴۰۵</span><span class="en">Summer 2026</span></div>
+          <h3><span class="fa">نتیجه شبیه بکتست نبود</span><span class="en">Live results did not match the backtest</span></h3>
+          <p><span class="fa">بکتست قدیمی روی ۶ سال ۸۲۵٪ سود نشان می‌داد. حساب زنده اما در ضرر بود. سه ماه طول کشید تا معلوم شود مشکل از خود بکتست است.</span><span class="en">The old backtest showed 825% profit over 6 years. The live account was losing. It took three months to see that the backtest itself was the problem.</span></p>
+        </article>
+        <article class="step" data-m="9">
+          <div class="when"><i></i><span class="fa">کشف</span><span class="en">Discovery</span></div>
+          <h3><span class="fa">بکتست از آینده خبر داشت</span><span class="en">The backtest could see the future</span></h3>
+          <p><span class="fa">معامله‌به‌معامله حساب زنده را با بکتست مقایسه کردم و خطا را پیدا کردم. کل موتور بکتست را روی داده‌ی یک‌دقیقه‌ای از نو ساختیم.</span><span class="en">I compared the live account with the backtest trade by trade and found the flaw. We rebuilt the whole backtest engine on 1-minute data.</span></p>
+        </article>
+        <article class="step" data-m="10">
+          <div class="when"><i></i><span class="fa">امروز</span><span class="en">Today</span></div>
+          <h3><span class="fa">بازسازی و بکتست دوباره</span><span class="en">Rebuilding and re-testing</span></h3>
+          <p><span class="fa">در حال بازسازی ربات و بکتست دوباره با موتور جدید روی ۶ سال داده‌ی یک‌دقیقه‌ای هستیم. تا نتیجه‌ی قابل اعتماد نداریم، ربات روی حساب نمی‌رود.</span><span class="en">We are rebuilding the robot and re-running backtests with the new engine on 6 years of 1-minute data. The robot does not go back on an account until the results can be trusted.</span></p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= system ================= -->
+  <section class="wrap sec" id="system">
+    <div class="sec-head">
+      <span class="eyebrow"><span class="fa">سیستم</span><span class="en">System</span></span>
+      <h2><span class="fa">پنج بخش، یک سیستم</span><span class="en">Five parts, one system</span></h2>
+      <p class="lead"><span class="fa">هر بخش کار مشخصی دارد و خروجی‌اش ورودی بخش بعدی است. ربات معامله‌گر و بکتستر یک مغز مشترک دارند تا تصمیم‌ها در بکتست و بازار زنده یکی باشد.</span><span class="en">Each part has one job, and its output feeds the next. The trading robot and the backtester share one decision engine, so a decision in the backtest is the same decision live.</span></p>
+    </div>
+    <div class="sys">
+      <article class="part guard">
+        <div class="tag"><span><span class="fa">بخش ۵ · watchdog.py</span><span class="en">Part 5 · watchdog.py</span></span><span class="pub"><span class="fa">کد عمومی</span><span class="en">public code</span></span></div>
+        <h3><span class="fa">نگهبان: ربات هیچ‌وقت تنها نمی‌ماند</span><span class="en">The watchdog: the robot is never alone</span></h3>
+        <svg class="ekg" viewBox="0 0 520 70" preserveAspectRatio="none" aria-hidden="true"><line class="base" x1="0" y1="40" x2="520" y2="40" stroke="var(--rule)"/><path d="M0 40 H120 L135 40 L145 18 L158 62 L170 8 L183 52 L192 40 H330 L345 40 L355 18 L368 62 L380 8 L393 52 L402 40 H520"/></svg>
+        <ul class="rules">
+          <li><span><span class="fa"><b>هر ۶۰ ثانیه</b> ضربان ربات را چک می‌کند (ربات هر ۳۰ ثانیه یک فایل ضربان می‌نویسد).</span><span class="en"><b>Every 60 seconds</b> it checks the robot's heartbeat (the robot writes a heartbeat file every 30 seconds).</span></span></li>
+          <li><span><span class="fa">ربات زنده ولی <b>۱۰ دقیقه بی‌ضربان</b> یعنی گیر کرده: می‌بندد و دوباره اجرا می‌کند. ربات مرده و <b>۳ دقیقه بی‌ضربان</b>: دوباره اجرا می‌کند.</span><span class="en">Alive but <b>silent for 10 minutes</b> means hung: it kills and restarts it. Dead and <b>silent for 3 minutes</b>: it restarts it.</span></span></li>
+          <li><span><span class="fa"><b>دلیل را پیدا می‌کند</b> و در بله می‌فرستد: آپدیت یا ری‌استارت ویندوز، خاموشی ناگهانی، خروج کاربر، صفحه‌ی آبی، کرش برنامه، یا دلیلی که خود ربات قبل از بسته شدن نوشته.</span><span class="en"><b>It finds the cause</b> and reports it on Bale: a Windows update or restart, a sudden power loss, a user sign-out, a blue screen, an app crash, or the reason the robot wrote before closing.</span></span></li>
+          <li><span><span class="fa">بازار باز ولی <b>بیش از ۴ ساعت و ربع</b> بدون همگام‌سازی: هشدار. تا مشکل حل نشده، هر ۳۰ دقیقه یادآوری.</span><span class="en">Market open but <b>no sync for over 4h15m</b>: alert. Until fixed, a reminder every 30 minutes.</span></span></li>
+          <li><span><span class="fa">خاموش کردن عمدی را می‌شناسد و دست نمی‌زند. با هر ورود به ویندوز و هر ۵ دقیقه خودش را بالا می‌آورد و همیشه فقط یک نسخه از آن اجرا می‌شود.</span><span class="en">It recognizes an intentional stop and leaves it alone. It starts itself at every Windows logon and every 5 minutes, and only one copy ever runs.</span></span></li>
+        </ul>
+        <p class="note"><span class="fa">نسخه‌ی اول نگهبان در یک تعطیلی ۴۶۴ بار تلاش کرد ربات را بالا بیاورد و هر بار خطا گرفت. همین شکست باعث شد آن را از نو بسازم و با یک ربات ساختگی در سه حالت آزمایشش کنم: ربات خاموش، ربات گیرکرده و خاموشی عمدی.</span><span class="en">During one outage, the first version tried 464 times to restart the robot and failed every time. That failure is why I rebuilt it and tested it against a fake robot in three scenarios: robot down, robot hung, and an intentional stop.</span></p>
+      </article>
+      <article class="part">
+        <div class="tag"><span><span class="fa">بخش ۱</span><span class="en">Part 1</span></span><span class="priv"><span class="fa">کد خصوصی</span><span class="en">private code</span></span></div>
+        <h3><span class="fa">ربات معامله‌گر</span><span class="en">Trading robot</span></h3>
+        <p><span class="fa">قانون‌های استراتژی را روی متاتریدر ۵ اجرا می‌کند: سفارش می‌گذارد و لغو می‌کند، در 2R نیمی از سود را برمی‌دارد و گزارش هر کار را با دلیل دقیقش به بله می‌فرستد.</span><span class="en">Runs the strategy on MetaTrader 5: places and cancels orders, banks half the position at 2R, and reports every action with its exact reason to Bale.</span></p>
+      </article>
+      <article class="part">
+        <div class="tag"><span><span class="fa">بخش ۲ · backtest_engine.py</span><span class="en">Part 2 · backtest_engine.py</span></span><span class="pub"><span class="fa">موتور عمومی</span><span class="en">public engine</span></span></div>
+        <h3><span class="fa">بکتستر</span><span class="en">Backtester</span></h3>
+        <p><span class="fa">شبیه‌سازی روی کندل‌های یک‌دقیقه با قیمت خرید و فروش جدا، اسپرد واقعی و سواپ؛ با گزارش اکسل، قیف دلیل‌ها و نمودار برای هر معامله.</span><span class="en">Simulates on 1-minute candles with separate bid and ask, real spread and swap, and outputs an Excel report, a reason funnel, and a chart for every trade.</span></p>
+      </article>
+      <article class="part half">
+        <div class="tag"><span><span class="fa">بخش ۳ · history_downloader.py</span><span class="en">Part 3 · history_downloader.py</span></span><span class="pub"><span class="fa">کد عمومی</span><span class="en">public code</span></span></div>
+        <h3><span class="fa">دانلودر تاریخچه</span><span class="en">History downloader</span></h3>
+        <p><span class="fa">داده‌ی ۶ سال را سال‌به‌سال از متاتریدر می‌گیرد؛ اگر نیمه‌کاره بماند، دفعه‌ی بعد از همان‌جا ادامه می‌دهد.</span><span class="en">Pulls 6 years of data from MetaTrader year by year and resumes where it stopped if interrupted.</span></p>
+      </article>
+      <article class="part half">
+        <div class="tag"><span><span class="fa">بخش ۴ · spread_meter.py</span><span class="en">Part 4 · spread_meter.py</span></span><span class="pub"><span class="fa">کد عمومی</span><span class="en">public code</span></span></div>
+        <h3><span class="fa">اسپردسنج</span><span class="en">Spread meter</span></h3>
+        <p><span class="fa">اسپرد واقعی بروکر را از هزاران تیک اندازه می‌گیرد. میانه را برمی‌دارد، نه میانگین، چون پرش‌های لحظه‌ای میانگین را گمراه می‌کنند.</span><span class="en">Measures the broker's real spread from thousands of ticks, using the median rather than the mean, because brief spikes distort the mean.</span></p>
+      </article>
+      <div class="flow">
+        <b><span class="fa">متاتریدر ۵</span><span class="en">MetaTrader 5</span></b><span class="arr">→</span>
+        <b><span class="fa">دانلودر و اسپردسنج</span><span class="en">Downloader + spread meter</span></b><span class="arr">→</span>
+        <b><span class="fa">بکتستر</span><span class="en">Backtester</span></b><span class="arr">→</span>
+        <b><span class="fa">ربات معامله‌گر</span><span class="en">Trading robot</span></b><span class="arr">→</span>
+        <b><span class="fa">گزارش در بله</span><span class="en">Reports on Bale</span></b>
+        <span><span class="fa">· نگهبان کنار ربات، همیشه بیدار</span><span class="en">· the watchdog beside the robot, always on</span></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= challenge ================= -->
+  <section class="wrap sec" id="challenge">
+    <div class="sec-head">
+      <span class="eyebrow"><span class="fa">بزرگ‌ترین چالش</span><span class="en">The biggest challenge</span></span>
+      <h2><span class="fa">بکتستی که سه ماه ما را فریب داد</span><span class="en">The backtest that fooled us for three months</span></h2>
+    </div>
+    <div class="story">
+      <p><span class="fa">یکی از بزرگ‌ترین خطرها در ساختن ربات معامله‌گر، <b>بکتست غیرواقعی</b> است. بکتست قدیمی ما روی ۶ سال داده <b>۸۲۵٪ سود</b> نشان می‌داد. ربات را به بازار زنده بردیم و سه ماه کار کرد، اما نتیجه اصلاً شبیه بکتست نبود و مجبور شدیم ربات را از نو برنامه‌ریزی کنیم.</span><span class="en">One of the biggest dangers in building a trading robot is <b>an unrealistic backtest</b>. Our old backtest showed <b>825% profit</b> over 6 years. We put the robot live and it ran for three months, but the results looked nothing like the backtest, and we had to rebuild the robot from scratch.</span></p>
+      <p><span class="fa">مقایسه‌ی معامله‌به‌معامله نشان داد <b>مغز ربات درست کار می‌کرد</b> و خطا در خود بکتستر بود: وقتی سفارشی وسط یک کندل ۴ساعته پر می‌شد، بکتستر فرض می‌کرد سقف و کف آن کندل <b>بعد از</b> ورود رخ داده است. پس سودی را ثبت می‌کرد که در واقع <b>قبل از</b> ورود اتفاق افتاده بود. یعنی بکتست از آینده خبر داشت.</span><span class="en">A trade-by-trade comparison showed that <b>the robot's logic was right</b> and the flaw was in the backtester. When an order filled inside a 4-hour candle, the backtester assumed the candle's high and low happened <b>after</b> the entry, so it credited profits that really happened <b>before</b> the entry. The backtest could see the future.</span></p>
+    </div>
+
+    <div class="panel" style="margin-block-start:28px">
+      <div class="chart-head">
+        <div>
+          <h3><span class="fa">شش هفته، سه روایت از همان معامله‌ها</span><span class="en">Six weeks, three versions of the same trades</span></h3>
+          <p><span class="fa">بازده تجمعی حساب ۱۰۰٬۰۰۰ دلاری، ۲۶ مرداد تا ۶ مهر ۱۴۰۵ (داده‌ی واقعی)</span><span class="en">Cumulative return on a $100,000 account, Aug 17 to Sep 28, 2026 (real data)</span></p>
+        </div>
+        <div class="legend" id="cmpLegend"></div>
+      </div>
+      <div class="cmp" id="cmp"></div>
+      <details class="tbl">
+        <summary><span class="fa">نمایش جدول</span><span class="en">Show as a table</span></summary>
+        <div class="tscroll">
+          <table>
+            <thead><tr><th><span class="fa">روایت</span><span class="en">Version</span></th><th><span class="fa">معامله</span><span class="en">Trades</span></th><th><span class="fa">برد</span><span class="en">Win rate</span></th><th><span class="fa">جمع R</span><span class="en">Total R</span></th><th><span class="fa">بازده</span><span class="en">Return</span></th><th><span class="fa">بیشترین افت</span><span class="en">Max drawdown</span></th></tr></thead>
+            <tbody>
+              <tr><td><span class="fa">بکتست با روش قدیم</span><span class="en">Backtest, old method</span></td><td class="n">39</td><td class="n">46.2%</td><td class="n">+6.21</td><td class="n">+4.83%</td><td class="n">1.69%</td></tr>
+              <tr><td><span class="fa">بکتست واقع‌بینانه</span><span class="en">Realistic backtest</span></td><td class="n">34</td><td class="n">26.5%</td><td class="n">−5.33</td><td class="n">−2.02%</td><td class="n">5.91%</td></tr>
+              <tr><td><span class="fa">حساب زنده</span><span class="en">Live account</span></td><td class="n">34</td><td class="n">23.5%</td><td class="n">−8.25</td><td class="n">−2.85%</td><td class="n">6.19%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+
+    <div class="proofs">
+      <div class="proof"><b><span class="fa"><bdi dir="ltr"><s>+۷۷٫۶٪</s></bdi> ← <bdi dir="ltr">−۵۱٫۲٪</bdi></span><span class="en"><s>+77.6%</s> → −51.2%</span></b><span><span class="fa">نتیجه‌ی دو سال بکتست، قبل و بعد از اصلاح همین یک فرض</span><span class="en">Two-year backtest, before and after fixing that one assumption</span></span></div>
+      <div class="proof"><b><span class="fa">۱۷۴ از ۱۸۶</span><span class="en">174 / 186</span></b><span><span class="fa">بار، سفارش‌های روی حساب دقیقاً همان بود که بکتست می‌خواست</span><span class="en">syncs where the orders on the account matched the backtest exactly</span></span></div>
+      <div class="proof"><b><span class="fa">۲۶ ← ۳۱ از ۳۳</span><span class="en">26 → 31 / 33</span></b><span><span class="fa">معامله‌ی مشترک که نتیجه‌اش درست پیش‌بینی شد؛ قبل و بعد از اصلاح</span><span class="en">shared trades predicted correctly, before and after the fix</span></span></div>
+      <div class="proof"><b><span class="fa">۰٫۶٪</span><span class="en">0.6%</span></b><span><span class="fa">احتمال نتیجه‌ی حساب زنده، اگر بکتست قدیمی راست می‌گفت</span><span class="en">chance of the live result if the old backtest had been right</span></span></div>
+    </div>
+
+    <div class="story" style="margin-block-start:36px">
+      <p><span class="fa"><b>کاری که کردیم:</b> بکتستر را روی داده‌ی یک‌دقیقه‌ای از نو ساختیم تا ترتیب واقعی حرکت قیمت داخل هر کندل دیده شود؛ با قیمت خرید و فروش جدا، اسپرد واقعی بروکر و سواپ. ربات و بکتستر حالا یک مغز مشترک دارند و آزمایش‌ها نشان می‌دهد در هر لحظه، تصمیم ربات زنده با بکتست یکی است. بعد از هر تغییر هم نتیجه‌ی کد جدید باید عیناً با نسخه‌ی قبل یکی باشد.</span><span class="en"><b>What we did:</b> we rebuilt the backtester on 1-minute data so the real order of price moves inside each candle is visible, with separate bid and ask, the broker's real spread, and swap. The robot and the backtester now share one decision engine, and tests show the live decision equals the backtest decision at every moment. After every change, the new code must reproduce the previous results exactly.</span></p>
+      <p><span class="fa"><b>درسی که در ابزار عمومی گذاشتم:</b> بکتستر عمومی من قبل از اجرا، استراتژی را روی داده‌ی بریده‌شده هم امتحان می‌کند. اگر سفارشی با دیدن کندل‌های بعدی عوض شود، یعنی استراتژی آینده را می‌بیند و بکتست اصلاً اجرا نمی‌شود. <b>امروز</b> در مرحله‌ی بازسازی ربات و بکتست دوباره با این موتور جدید هستیم.</span><span class="en"><b>The lesson, built into the public tool:</b> before it runs, my public backtester also tests the strategy on truncated data. If any order changes once later candles are visible, the strategy is seeing the future and the backtest refuses to run. <b>Today</b> we are rebuilding the robot and re-running the backtests with this new engine.</span></p>
+    </div>
+
+    <details class="panel tbl" style="margin-block-start:24px">
+      <summary><span class="fa">۱۴ ایرادی که در این بررسی پیدا و ثبت شد</span><span class="en">The 14 issues this review found and logged</span></summary>
+      <div class="tscroll">
+        <table class="bugs">
+          <thead><tr><th><span class="fa">بخش</span><span class="en">Area</span></th><th><span class="fa">شدت</span><span class="en">Severity</span></th><th><span class="fa">ایراد</span><span class="en">Issue</span></th><th><span class="fa">وضعیت</span><span class="en">Status</span></th></tr></thead>
+          <tbody id="bugRows"></tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+
+  <!-- ================= logs ================= -->
+  <section class="wrap sec" id="logs">
+    <div class="sec-head">
+      <span class="eyebrow"><span class="fa">لاگ‌ها</span><span class="en">Logs</span></span>
+      <h2><span class="fa">وقتی اینترنت ملی شد، ربات زبان باز کرد</span><span class="en">When the internet went national, the robot learned to talk</span></h2>
+    </div>
+    <div class="logs">
+      <div class="txt">
+        <p><span class="fa">ربات روی سرور مجازی کار می‌کرد که یک‌باره بی‌هیچ دلیل ظاهری ارتباطش قطع شد. بعدها فهمیدم درست همان زمانی بود که اینترنت ایران ملی شد و من به سرور دسترسی نداشتم. <b>نمی‌دانستم ربات زنده است یا نه، سفارشی دارد یا نه.</b></span><span class="en">The robot was running on a virtual server when, with no visible reason, it went out of reach. Later I realized it was exactly when Iran's internet was cut to the national network and I had no access to the server. <b>I could not tell whether the robot was alive or whether it had open orders.</b></span></p>
+        <p><span class="fa">همین باعث شد موتوری بسازم که هر اتفاق را <b>کامل و خوانا</b> به پیام‌رسان داخلی «بله» بفرستد: هر سفارش با حجم و ریسک واقعی، هر لغو با دلیل دقیق و قدم بعدی، سیو سود، بسته شدن معامله، گزارش روزانه، قطع و وصل شدن اتصال و پیام‌های نگهبان. حالا از روی گوشی می‌دانم ربات دقیقاً چه می‌کند و چرا.</span><span class="en">That is why I built an engine that sends every event, <b>complete and readable</b>, to the domestic messenger Bale: every order with its size and real risk, every cancellation with its exact reason and next step, partial closes, closed trades, daily reports, connection drops and recoveries, and messages from the watchdog. From my phone I now know exactly what the robot is doing and why.</span></p>
+        <div class="chips">
+          <span><span class="fa">راه‌اندازی</span><span class="en">startup</span></span><span><span class="fa">سفارش</span><span class="en">order</span></span><span><span class="fa">لغو با دلیل</span><span class="en">cancel + reason</span></span><span><span class="fa">سیو سود</span><span class="en">partial close</span></span><span><span class="fa">بسته شدن</span><span class="en">trade closed</span></span><span><span class="fa">گزارش روزانه</span><span class="en">daily report</span></span><span><span class="fa">قطع اتصال</span><span class="en">connection lost</span></span><span><span class="fa">نگهبان</span><span class="en">watchdog</span></span>
+        </div>
+        <p style="font-size:var(--t-s);color:var(--muted)"><span class="fa">پیام‌ها لاگ‌های واقعی نسخه‌ی قبلی ربات روی حساب دمو هستند.</span><span class="en">These are real logs from the previous version of the robot on a demo account, translated from Persian.</span></p>
+      </div>
+      <div class="phone">
+        <div class="screen">
+          <div class="bar"><div class="av">ل</div><div class="who"><b>لاگ ربات</b><span id="feedState">همگام‌سازی…</span></div></div>
+          <div class="feed" id="feed" aria-live="off"></div>
+          <div class="feed-ctl"><span id="feedCount"></span><button type="button" id="feedBtn"></button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= method ================= -->
+  <section class="wrap sec" id="method">
+    <div class="sec-head">
+      <span class="eyebrow"><span class="fa">روش کار</span><span class="en">Method</span></span>
+      <h2><span class="fa">چطور با هوش مصنوعی می‌سازم</span><span class="en">How I build with AI</span></h2>
+    </div>
+    <div class="method">
+      <div class="txt">
+        <p><span class="fa">امروز حتی برنامه‌نویس‌های باتجربه هم بیشتر کدشان را با هوش مصنوعی می‌نویسند. مهارت کمیاب دیگر تایپ کردن کد نیست؛ <b>دانستن این است که چه باید ساخت، چطور درستی‌اش را سنجید و کجا باید به نتیجه شک کرد.</b></span><span class="en">Today even experienced programmers write most of their code with AI. The scarce skill is no longer typing code; <b>it is knowing what to build, how to prove it works, and when to doubt a result.</b></span></p>
+        <p><span class="fa">من کل این سیستم را با مدل‌های هوش مصنوعی روز دنیا مثل <b>کلود</b> و <b>جی‌پی‌تی</b> ساخته‌ام. نقش من طراحی سیستم، تعریف دقیق رفتار، آزمودن و داوری است. وقتی بکتست ۸۲۵٪ سود نشان داد، به جای جشن گرفتن، آن را با واقعیت مقایسه کردم.</span><span class="en">I built this entire system with leading AI models such as <b>Claude</b> and <b>GPT</b>. My role is system design, precise specification, testing and judgment. When the backtest showed 825% profit, I did not celebrate; I compared it with reality.</span></p>
+      </div>
+      <ol class="loop">
+        <li><span><b><span class="fa">تعریف دقیق</span><span class="en">Specify</span></b><span><span class="fa">هر قانون و هر حالت خاص را به زبان ساده و بدون ابهام می‌نویسم.</span><span class="en">I write every rule and edge case in plain, unambiguous language.</span></span></span></li>
+        <li><span><b><span class="fa">ساخت با هوش مصنوعی</span><span class="en">Build with AI</span></b><span><span class="fa">مدل کد را می‌نویسد؛ من ساختار و تصمیم‌ها را هدایت می‌کنم.</span><span class="en">The model writes the code; I direct the structure and the decisions.</span></span></span></li>
+        <li><span><b><span class="fa">آزمون با جواب معلوم</span><span class="en">Test against known answers</span></b><span><span class="fa">داده‌ی ساختگی، متاتریدر ساختگی و حالت‌هایی که جوابشان را از قبل می‌دانیم.</span><span class="en">Synthetic data, a fake MetaTrader, and cases whose answers are known in advance.</span></span></span></li>
+        <li><span><b><span class="fa">مقایسه با واقعیت</span><span class="en">Compare with reality</span></b><span><span class="fa">نتیجه‌ی بکتست را معامله‌به‌معامله با حساب زنده می‌سنجم.</span><span class="en">I check the backtest against the live account, trade by trade.</span></span></span></li>
+        <li><span><b><span class="fa">اصلاح و قفل کردن</span><span class="en">Fix and lock in</span></b><span><span class="fa">هر اصلاح با آزمونی همراه است که نمی‌گذارد همان خطا برگردد.</span><span class="en">Every fix comes with a test that keeps the same mistake from coming back.</span></span></span></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ================= tools ================= -->
+  <section class="wrap sec" id="tools">
+    <div class="sec-head">
+      <span class="eyebrow"><span class="fa">ابزارهای عمومی</span><span class="en">Public tools</span></span>
+      <h2><span class="fa">چهار بخش سیستم، با کد کامل</span><span class="en">Four parts of the system, full source</span></h2>
+      <p class="lead"><span class="fa">کد قانون‌های استراتژی خصوصی است. این چهار ابزار عمومی‌اند و هر کدام را خودم آزمایش کرده‌ام. پیش‌نیاز: پایتون و کتابخانه‌های pandas و numpy و MetaTrader5.</span><span class="en">The strategy rules stay private. These four tools are public, and I tested each one myself. Requirements: Python with pandas, numpy and MetaTrader5.</span></p>
+    </div>
+    <div class="tools" id="toolList"></div>
+  </section>
+
+  <!-- ================= hire ================= -->
+  <section class="wrap sec" id="hire">
+    <div class="sec-head">
+      <span class="eyebrow"><span class="fa">همکاری</span><span class="en">Work with me</span></span>
+      <h2><span class="fa">آماده‌ام در تیم شما بسازم</span><span class="en">Ready to build on your team</span></h2>
+    </div>
+    <div class="hire">
+      <div class="txt">
+        <p><span class="fa">دنبال جایگاهی در یک تیم هوش مصنوعی، استارتاپ یا شرکت فین‌تک هستم؛ جایی که بتوانم با هوش مصنوعی ابزار و سیستم واقعی بسازم، فرایندها را خودکار کنم، و روی داده‌ی بازار بکتست و تحلیل انجام دهم.</span><span class="en">I am looking for a role on an AI team, a startup, or a fintech company, where I can build real tools and systems with AI, automate processes, and run backtests and analysis on market data.</span></p>
+        <p><span class="fa"><b>آنچه با خودم می‌آورم:</b> ساختن یک سیستم چندبخشی از صفر تا اجرای زنده، شک کردن به نتیجه‌های خیلی خوب و پیدا کردن خطا، گزارش‌دهی شفاف، و پایداری در کار. یک سال دانشگاه رفتم و بعد آن را کنار گذاشتم تا با تمام وقت روی این پروژه کار کنم؛ همین جدیت را به کار شما می‌آورم.</span><span class="en"><b>What I bring:</b> taking a multi-part system from zero to live operation, doubting results that look too good and finding the flaw, transparent reporting, and persistence. I spent a year at university and then left to work on this project full time; I bring the same commitment to your work.</span></p>
+        <dl class="terms">
+          <div><dt class="k"><span class="fa">نوع همکاری</span><span class="en">Arrangement</span></dt><dd class="v" style="margin:0"><span class="fa">حضوری یا دورکاری</span><span class="en">On-site or remote</span></dd></div>
+          <div><dt class="k"><span class="fa">حقوق</span><span class="en">Salary</span></dt><dd class="v" style="margin:0"><span class="fa">توافقی</span><span class="en">Negotiable</span></dd></div>
+          <div><dt class="k"><span class="fa">پروژه‌ی آزمایشی</span><span class="en">Trial project</span></dt><dd class="v" style="margin:0"><span class="fa">آماده‌ی یک پروژه‌ی آزمایشی کوتاه، رایگان یا با حقوق توافقی، تا کارم را از نزدیک ببینید.</span><span class="en">Happy to start with a short trial project, unpaid or at a negotiated rate, so you can see my work up close.</span></dd></div>
+          <div><dt class="k"><span class="fa">شهر</span><span class="en">Based in</span></dt><dd class="v" style="margin:0"><span class="fa">همدان</span><span class="en">Hamedan, Iran</span></dd></div>
+          <div><dt class="k"><span class="fa">تحصیلات</span><span class="en">Education</span></dt><dd class="v" style="margin:0"><span class="fa">دیپلم کامپیوتر، مدرسه‌ی شهید مطهری فریمان؛ یک سال دانشگاه</span><span class="en">High-school diploma in computing, Shahid Motahari School, Fariman; one year of university</span></dd></div>
+        </dl>
+      </div>
+      <div style="display:grid;gap:16px;align-content:start">
+        <p style="color:var(--fg-2)"><span class="fa">برای گفت‌وگو یا پروژه‌ی آزمایشی، ایمیل بزنید:</span><span class="en">For a conversation or a trial project, email me:</span></p>
+        <div class="mail"><span class="addr" id="mailAddr">shirdelhossein909@gmail.com</span><button class="copy" type="button" id="mailCopy"><span class="fa">کپی ایمیل</span><span class="en">Copy email</span></button><span class="copied" id="mailDone" hidden><span class="fa">کپی شد</span><span class="en">Copied</span></span></div>
+        <p style="color:var(--muted);font-size:var(--t-s)"><span class="fa">شماره‌ی تماس در رزومه‌ی پی‌دی‌اف آمده است.</span><span class="en">My phone number is on the PDF résumé.</span></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><span class="fa">این سایت، متن‌هایش و همه‌ی ابزارهایش با هوش مصنوعی ساخته شده‌اند.</span><span class="en">This site, its copy and all of its tools were built with AI.</span></span>
+    <span><span class="fa">حسین شیردل · ۱۴۰۵</span><span class="en">Hossein Shirdel · 2026</span></span>
+  </div>
+</footer>
+
+<script type="application/json" id="series">{"live": [["2026-08-19 15:34", 1.107], ["2026-08-21 17:31", 0.462], ["2026-08-21 19:21", 0.929], ["2026-08-25 23:25", 0.608], ["2026-08-26 05:03", 0.286], ["2026-08-26 11:26", 0.071], ["2026-08-26 16:00", -0.141], ["2026-08-27 15:20", -0.565], ["2026-08-27 20:43", -1.203], ["2026-08-28 05:25", -1.539], ["2026-08-31 10:15", -1.958], ["2026-09-01 17:49", -2.479], ["2026-09-02 04:36", -3.006], ["2026-09-02 09:51", -3.212], ["2026-09-04 15:30", -3.826], ["2026-09-04 15:50", -4.444], ["2026-09-04 16:47", -2.905], ["2026-09-08 02:05", -3.114], ["2026-09-08 05:21", -3.423], ["2026-09-10 14:06", -4.041], ["2026-09-10 16:39", -3.712], ["2026-09-11 13:55", -4.123], ["2026-09-11 14:16", -4.737], ["2026-09-14 11:07", -4.939], ["2026-09-14 19:12", -3.646], ["2026-09-15 17:29", -3.952], ["2026-09-15 17:37", -4.466], ["2026-09-16 21:00", -4.672], ["2026-09-16 21:12", -5.192], ["2026-09-16 21:37", -5.379], ["2026-09-18 09:42", -4.373], ["2026-09-22 05:42", -3.602], ["2026-09-24 10:40", -4.125], ["2026-09-28 01:51", -2.846]], "old": [["2026-08-19 12:00", 1.276], ["2026-08-21 16:00", 1.807], ["2026-08-21 16:00", 2.088], ["2026-08-25 20:00", 1.735], ["2026-08-26 04:00", 1.378], ["2026-08-26 08:00", 1.143], ["2026-08-26 16:00", 1.357], ["2026-08-26 16:00", 1.14], ["2026-08-27 12:00", 1.318], ["2026-08-27 20:00", 1.578], ["2026-08-28 00:00", 2.6], ["2026-08-28 04:00", 2.253], ["2026-08-31 08:00", 1.796], ["2026-09-01 16:00", 1.982], ["2026-09-01 16:00", 1.322], ["2026-09-01 16:00", 2.626], ["2026-09-02 08:00", 2.393], ["2026-09-04 12:00", 1.735], ["2026-09-04 12:00", 1.07], ["2026-09-04 16:00", 2.409], ["2026-09-08 00:00", 2.187], ["2026-09-08 04:00", 1.852], ["2026-09-09 08:00", 2.9], ["2026-09-10 12:00", 2.157], ["2026-09-10 12:00", 3.642], ["2026-09-11 12:00", 3.198], ["2026-09-11 12:00", 2.471], ["2026-09-14 08:00", 2.205], ["2026-09-14 16:00", 3.523], ["2026-09-15 00:00", 3.037], ["2026-09-15 16:00", 2.695], ["2026-09-15 16:00", 2.114], ["2026-09-16 20:00", 2.331], ["2026-09-16 20:00", 2.108], ["2026-09-16 20:00", 1.889], ["2026-09-18 08:00", 2.943], ["2026-09-22 04:00", 3.741], ["2026-09-24 08:00", 3.974], ["2026-09-25 20:00", 4.828]], "real": [["2026-08-19 12:00", 1.328], ["2026-08-21 16:00", 1.859], ["2026-08-21 16:00", 1.213], ["2026-08-25 20:00", 0.891], ["2026-08-26 04:00", 0.569], ["2026-08-26 08:00", 0.354], ["2026-08-26 16:00", 0.569], ["2026-08-26 16:00", 0.356], ["2026-08-27 12:00", -0.071], ["2026-08-27 16:00", -0.708], ["2026-09-01 16:00", -1.235], ["2026-09-02 04:00", -1.76], ["2026-09-02 08:00", -1.969], ["2026-09-04 12:00", -2.594], ["2026-09-04 12:00", -3.214], ["2026-09-04 16:00", -1.929], ["2026-09-08 00:00", -2.137], ["2026-09-08 04:00", -2.449], ["2026-09-09 08:00", -1.404], ["2026-09-10 12:00", -2.032], ["2026-09-11 12:00", -2.447], ["2026-09-11 12:00", -3.069], ["2026-09-14 08:00", -3.275], ["2026-09-14 16:00", -1.989], ["2026-09-15 00:00", -2.405], ["2026-09-15 16:00", -2.922], ["2026-09-15 16:00", -3.233], ["2026-09-16 20:00", -3.75], ["2026-09-16 20:00", -3.955], ["2026-09-16 20:00", -4.16], ["2026-09-18 08:00", -3.124], ["2026-09-22 04:00", -2.351], ["2026-09-24 08:00", -2.87], ["2026-09-25 20:00", -2.023]]}</script>
+<script type="application/json" id="codes">[{"file": "backtest_engine.py", "name_fa": "بکتستر با قفل ضد دیدن آینده", "name_en": "Backtester with a look-ahead lock", "desc_fa": "شبیه‌سازی روی کندل‌های یک‌دقیقه با قیمت خرید و فروش جدا، اسپرد، سواپ و سیو سود در 2R. قبل از اجرا، استراتژی را روی ۲۵ برش از داده امتحان می‌کند؛ اگر آینده را ببیند، بکتست اجرا نمی‌شود. یک استراتژی نمونه‌ی ساده دارد که می‌شود جایش استراتژی خودتان را گذاشت.", "desc_en": "Simulates on 1-minute candles with separate bid and ask, spread, swap and a partial close at 2R. Before running, it re-tests the strategy on 25 cuts of the data; if the strategy sees the future, the backtest refuses to run. Ships with a simple sample strategy you can replace with your own.", "test_fa": "آزموده با ۱۴ حالت دست‌ساز با جواب معلوم، ۳ استراتژی متقلب که همه گیر افتادند، و مقایسه‌ی ۶۲۴ معامله با یک شبیه‌ساز کندل‌به‌کندل (همه یکسان).", "test_en": "Tested with 14 hand-built cases with known answers, 3 cheating strategies (all caught), and 624 trades matched one by one against a candle-by-candle simulator.", "lines": 433, "code": "# -*- coding: utf-8 -*-\n\"\"\"بک‌تستر عمومی — شبیه‌سازی معامله روی کندل‌های ۱دقیقه، با قفل ضد «دیدن آینده»\n\nبخشی از سیستم معامله‌گری خودکار حسین شیردل (ساخته‌شده با هوش مصنوعی).\nقوانین راهبرد اصلی من داخل این فایل نیست؛ به‌جایش یک راهبرد نمونه‌ی ساده گذاشته‌ام (شکست سقف/کف\n۲۰ کندل). هر راهبردی را می‌شود جایش گذاشت: تابعی که کندل‌ها را می‌گیرد و فهرست سفارش‌ها را برمی‌گرداند.\n\nاجرا:  python backtest_engine.py\nپیش‌نیاز: pip install pandas numpy   (برای نمودار: matplotlib)\nدیتا:    خروجی history_downloader.py — مثلاً XAUUSD.zip با XAUUSD-1.csv و XAUUSD-15.csv\n         (و اگر spreads.csv از spread_meter.py کنارش باشد، اسپرد واقعی از آن خوانده می‌شود)\n\nچرا «قفل ضد دیدن آینده»؟\n  بک‌تست قبلی من سه ماه نتیجه‌ی عالی نشان داد و در حساب واقعی شکست خورد؛ دلیلش این بود که بخشی از\n  کد، بدون اینکه معلوم باشد، از کندل‌هایی استفاده می‌کرد که هنوز بسته نشده بودند. این موتور قبل از\n  اجرا، راهبرد را چند بار روی دیتای «بریده‌شده» هم اجرا می‌کند: سفارشی که تا لحظه‌ی برش صادر شده\n  باید با دیتای کامل و دیتای بریده دقیقاً یکی باشد. اگر نباشد یعنی راهبرد آینده را می‌بیند و بک‌تست\n  اجرا نمی‌شود.\n\nقواعد شبیه‌سازی (همه بدبینانه):\n  - کندل‌ها قیمت Bid اند؛ خرید با Ask (= Bid + اسپرد) پر می‌شود و فروش با Ask بسته می‌شود.\n  - سفارش فقط از کندل بعد از بسته شدن کندل سیگنال فعال می‌شود (اوردر لیمیت).\n  - اگر قیمت پیش از پر شدن اوردر به تارگت رسید یا زمان اوردر تمام شد → لغو.\n  - در کندلی که اوردر پر می‌شود فقط حدضرر بررسی می‌شود (تارگت و سیو سود نه).\n  - اگر حدضرر و تارگت در یک کندل ۱دقیقه لمس شدند → حدضرر.\n  - سیو سود: در 2R نصف حجم بسته می‌شود؛ باقی تا حدضرر یا تارگت می‌ماند.\n  - هزینه‌ها: اسپرد + سواپ هر شب نگهداری. ریسک هر معامله ۱٪ موجودی همان لحظه.\n\"\"\"\n\nimport os\nimport io\nimport sys\nimport glob\nimport zipfile\n\nimport numpy as np\nimport pandas as pd\n\n# =====================================================================================\n#                    تنظیمات\n# =====================================================================================\nDATA_DIR = os.path.join(os.path.expanduser(\"~\"), \"Desktop\", \"history_data\")\nOUT_DIR = os.path.join(DATA_DIR, \"نتیجه_بکتست\")\nSYMBOL = \"XAUUSD\"\nSIGNAL_TF = \"15\"               # تایم‌فریم سیگنال (برچسب اسم فایل: 15 یعنی XAUUSD-15.csv)\nSTART = \"\"                     # مثل \"2021-01-01\" — خالی = از اول دیتای ۱دقیقه\nEND = \"\"                       # خالی = تا آخر دیتا\n\nSTART_EQUITY = 100000.0\nRISK_PER_TRADE = 0.01          # ۱٪ موجودی برای هر معامله\nPARTIAL_AT_R = 2.0             # سیو سود: در 2R ...\nPARTIAL_FRAC = 0.5             # ... نصف حجم بسته شود (0 = بدون سیو سود)\nSPREAD = None                  # None = از spreads.csv، وگرنه از جدول پایین (برحسب قیمت)\nSPREAD_TABLE = {\"XAUUSD\": 0.30, \"XAGUSD\": 0.03, \"EURUSD\": 0.00012, \"GBPUSD\": 0.00018, \"USDJPY\": 0.020}\nSWAP_SPREAD_MULT_PER_NIGHT = 0.2   # سواپ هر شب ≈ ۲۰٪ اسپرد\nLOOKAHEAD_CHECKS = 25          # چند برش برای آزمون «دیدن آینده»\n\n# ---- راهبرد نمونه (شکست سقف/کف) ----\nDEMO_BREAKOUT_BARS = 20        # بسته شدن بالای سقف ۲۰ کندل قبل → خرید (و برعکس)\nDEMO_EMA = 50                  # فقط هم‌جهت شیب میانگین متحرک ۵۰\nDEMO_PULLBACK_ATR = 0.5        # اوردر لیمیت نیم ATR عقب‌تر از قیمت بسته شدن\nDEMO_STOP_ATR = 1.5            # حدضرر ۱.۵ ATR پشت ورود\nDEMO_RR = 3.0                  # تارگت 3R\nDEMO_EXPIRE_BARS = 8           # اگر تا ۸ کندل پر نشد، لغو\n# =====================================================================================\n\n\n# ============================================================================\n# خواندن دیتا\n# ============================================================================\ndef _smart_dt(d, t=None):\n    \"\"\"تبدیل تاریخ به datetime با تشخیص خودکار ترتیب روز/ماه (فرمت بروکرها فرق دارد).\"\"\"\n    s = d.astype(str).str.strip()\n    if t is not None:\n        s = s + \" \" + t.astype(str).str.strip()\n    samp = s.head(500).str.extract(r\"^(\\d{1,4})[./-](\\d{1,2})[./-](\\d{1,4})\")\n    dayfirst = False\n    try:\n        first = pd.to_numeric(samp[0], errors=\"coerce\")\n        if first.notna().any() and first.max() <= 31 and (first > 12).any():\n            dayfirst = True\n    except Exception:\n        pass\n    return pd.to_datetime(s, errors=\"coerce\", dayfirst=dayfirst)\n\n\ndef read_mt_csv_from_bytes(b: bytes) -> pd.DataFrame:\n    \"\"\"CSV قیمت: متاتریدر بدون سطر عنوان (date,time,o,h,l,c[,v] یا datetime,o,h,l,c) یا فایل با سطر عنوان\n    (ستون‌های Open/High/Low/Close یا BidOpen/...، تاریخ در Date/Time یا DateTime).\"\"\"\n    if b is None or len(b) == 0:\n        raise ValueError(\"فایل CSV خالی است.\")\n    head = b[:2048].decode(\"utf-8\", \"ignore\")\n    first_line = head.splitlines()[0].lower() if head else \"\"\n    if any(k in first_line for k in (\"open\", \"high\", \"low\", \"close\")):\n        df = pd.read_csv(io.BytesIO(b))\n        df.columns = [str(c).strip().lower().replace(\" \", \"\") for c in df.columns]\n\n        def pick(*names):\n            for nm in names:\n                if nm in df.columns:\n                    return df[nm]\n            return None\n\n        o = pick(\"open\", \"bidopen\"); h = pick(\"high\", \"bidhigh\")\n        l = pick(\"low\", \"bidlow\");   c = pick(\"close\", \"bidclose\")\n        if o is None or h is None or l is None or c is None:\n            raise ValueError(\"ستون‌های قیمت (Open/High/Low/Close یا BidOpen/...) پیدا نشد.\")\n        dcol = pick(\"date\"); tcol = pick(\"time\", \"datetime\", \"timestamp\", \"gmttime\")\n        if dcol is not None and tcol is not None:\n            tser = _smart_dt(dcol, tcol)\n        elif dcol is not None or tcol is not None:\n            tser = _smart_dt(dcol if dcol is not None else tcol)\n        else:\n            tser = _smart_dt(df.iloc[:, 0])\n    else:\n        df = pd.read_csv(io.BytesIO(b), header=None)\n        if df.shape[1] < 5:\n            raise ValueError(\"فرمت CSV غیرمنتظره است (ستون کم).\")\n        if pd.to_numeric(df.iloc[:, 1], errors=\"coerce\").notna().mean() > 0.9:\n            tser = _smart_dt(df.iloc[:, 0])                       # ستون اول تاریخ+ساعت یکجا\n            o, h, l, c = (df.iloc[:, k] for k in (1, 2, 3, 4))\n        else:\n            if df.shape[1] < 6:\n                raise ValueError(\"فرمت CSV غیرمنتظره است (ستون کم).\")\n            tser = _smart_dt(df.iloc[:, 0], df.iloc[:, 1])        # فرمت کلاسیک: date,time,o,h,l,c\n            o, h, l, c = (df.iloc[:, k] for k in (2, 3, 4, 5))\n    out = pd.DataFrame({\"time\": tser,\n                        \"open\": pd.to_numeric(o, errors=\"coerce\"), \"high\": pd.to_numeric(h, errors=\"coerce\"),\n                        \"low\": pd.to_numeric(l, errors=\"coerce\"), \"close\": pd.to_numeric(c, errors=\"coerce\")})\n    out = out.dropna().sort_values(\"time\").drop_duplicates(\"time\").reset_index(drop=True)\n    if out.empty:\n        raise ValueError(\"هیچ سطر معتبری در CSV پیدا نشد (فرمت ناشناخته).\")\n    return out\n\n\ndef _source(data_dir, symbol):\n    \"\"\"ZIP نماد یا پوشه‌ی بازشده‌اش → {اسم فایل: تابع خواندن}\"\"\"\n    zp = os.path.join(data_dir, f\"{symbol}.zip\")\n    if os.path.exists(zp):\n        z = zipfile.ZipFile(zp)\n        return {os.path.basename(n): (lambda n=n: z.read(n)) for n in z.namelist() if n.lower().endswith(\".csv\")}\n    out = {}\n    for p in glob.glob(os.path.join(data_dir, \"**\", f\"{symbol}-*.csv\"), recursive=True):\n        out.setdefault(os.path.basename(p), (lambda p=p: open(p, \"rb\").read()))\n    return out\n\n\ndef load_data(data_dir, symbol, tf):\n    \"\"\"(کندل‌های تایم‌فریم سیگنال، کندل‌های ۱دقیقه یا None)\"\"\"\n    files = _source(data_dir, symbol)\n    if f\"{symbol}-{tf}.csv\" not in files:\n        raise FileNotFoundError(f\"فایل {symbol}-{tf}.csv در {data_dir} پیدا نشد.\")\n    sig = read_mt_csv_from_bytes(files[f\"{symbol}-{tf}.csv\"]())\n    m1 = None\n    for name in (f\"{symbol}-1.csv\", f\"{symbol}-M1.csv\"):\n        if name in files:\n            m1 = read_mt_csv_from_bytes(files[name]())\n            break\n    return sig, m1\n\n\ndef load_spread(data_dir, symbol):\n    if SPREAD is not None:\n        return float(SPREAD)\n    try:\n        df = pd.read_csv(os.path.join(data_dir, \"spreads.csv\"))\n        col = \"median\" if \"median\" in df.columns else \"spread\"\n        v = float(df.loc[df[\"symbol\"].astype(str).str.strip() == symbol, col].iloc[0])\n        if np.isfinite(v) and v > 0:\n            return v\n    except Exception:\n        pass\n    return float(SPREAD_TABLE.get(symbol, 0.0))\n\n\n# ============================================================================\n# راهبرد نمونه — جای این تابع، راهبرد خودت را بگذار\n# ============================================================================\ndef demo_strategy(df, tf_span):\n    \"\"\"df: کندل‌های بسته‌شده (ستون‌های time,open,high,low,close؛ time = زمان باز شدن کندل).\n    خروجی: فهرست سفارش‌ها. هر سفارش: time (زمانی که صادر می‌شود = بسته شدن کندل سیگنال)،\n    direction (\"BUY\"/\"SELL\")، entry، sl، tp، expire (تا کی معتبر است).\n    قانون طلایی: سفارشی که در کندل i صادر می‌شود فقط باید از کندل‌های 0..i استفاده کند.\"\"\"\n    h, l, c = df[\"high\"], df[\"low\"], df[\"close\"]\n    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)\n    atr = tr.rolling(14).mean()\n    ema = c.ewm(span=DEMO_EMA, adjust=False).mean()\n    hh = h.rolling(DEMO_BREAKOUT_BARS).max().shift(1)        # سقف ۲۰ کندل «قبل»\n    ll = l.rolling(DEMO_BREAKOUT_BARS).min().shift(1)\n    up = (c > hh) & (c.shift() <= hh.shift()) & (ema > ema.shift(5))\n    dn = (c < ll) & (c.shift() >= ll.shift()) & (ema < ema.shift(5))\n    out = []\n    t_close = df[\"time\"] + tf_span\n    for i in np.flatnonzero((up | dn).to_numpy() & atr.notna().to_numpy()):\n        a, cl = float(atr.iloc[i]), float(c.iloc[i])\n        buy = bool(up.iloc[i])\n        entry = cl - DEMO_PULLBACK_ATR * a if buy else cl + DEMO_PULLBACK_ATR * a\n        sl = entry - DEMO_STOP_ATR * a if buy else entry + DEMO_STOP_ATR * a\n        tp = entry + DEMO_RR * (entry - sl)\n        out.append({\"time\": t_close.iloc[i], \"direction\": \"BUY\" if buy else \"SELL\",\n                    \"entry\": entry, \"sl\": sl, \"tp\": tp,\n                    \"expire\": t_close.iloc[i] + DEMO_EXPIRE_BARS * tf_span})\n    return out\n\n\n# ============================================================================\n# قفل ضد «دیدن آینده»\n# ============================================================================\ndef _key(s):\n    return (pd.Timestamp(s[\"time\"]), s[\"direction\"], round(float(s[\"entry\"]), 8), round(float(s[\"sl\"]), 8),\n            round(float(s[\"tp\"]), 8), pd.Timestamp(s[\"expire\"]))\n\n\ndef lookahead_check(strategy, df, tf_span, n=LOOKAHEAD_CHECKS, seed=7):\n    \"\"\"راهبرد را روی دیتای کامل و روی n برش تصادفی اجرا می‌کند. هر سفارشی که تا لحظه‌ی برش صادر شده\n    باید در هر دو یکی باشد. خروجی: (درست است؟، توضیح)\"\"\"\n    full = sorted(_key(s) for s in strategy(df, tf_span))\n    if n <= 0 or len(df) < 50:\n        return True, \"آزمون انجام نشد (دیتا کم یا خاموش)\"\n    rng = np.random.default_rng(seed)\n    cuts = sorted(set(int(k) for k in rng.integers(len(df) // 5, len(df), n)))\n    for k in cuts:\n        cut_time = df[\"time\"].iloc[k - 1] + tf_span          # بسته شدن آخرین کندلِ برش\n        part = sorted(_key(s) for s in strategy(df.iloc[:k].reset_index(drop=True), tf_span))\n        later = [s for s in part if s[0] > cut_time]\n        if later:\n            return False, f\"سفارشی با زمان {later[0][0]} از دیتایی ساخته شده که تا {cut_time} بود.\"\n        want = [s for s in full if s[0] <= cut_time]\n        if part != want:\n            diff = sorted(set(want) ^ set(part))\n            return False, (f\"با برش در {cut_time}، سفارش‌ها عوض شدند (مثلاً {diff[0][1]} در {diff[0][0]}) — \"\n                           f\"یعنی راهبرد از کندل‌های بعد از آن لحظه خبر داشته.\")\n    return True, f\"{len(cuts)} برش آزمایش شد؛ راهبرد آینده را نمی‌بیند.\"\n\n\n# ============================================================================\n# شبیه‌سازی\n# ============================================================================\ndef _first(mask_fn, j0, j1, step=4096):\n    \"\"\"اولین j در [j0, j1) که mask_fn(slice) برایش درست است — تکه‌تکه، تا کل آرایه بی‌دلیل خوانده نشود.\"\"\"\n    j = j0\n    while j < j1:\n        k = min(j1, j + step)\n        m = mask_fn(slice(j, k))\n        if m.any():\n            return j + int(np.argmax(m))\n        j, step = k, step * 2\n    return j1\n\n\ndef simulate(signals, bars, spread):\n    \"\"\"هر سفارش جداگانه روی کندل‌های bars (۱دقیقه) → فهرست معامله‌ها با نتیجه برحسب R\"\"\"\n    t = bars[\"time\"].to_numpy(dtype=\"datetime64[ns]\")\n    o, h, l, c = (bars[k].to_numpy(dtype=float) for k in (\"open\", \"high\", \"low\", \"close\"))\n    n = len(t)\n    out, cancelled = [], {\"تارگت_پیش_از_ورود\": 0, \"تمام_شدن_زمان\": 0, \"سفارش_نامعتبر\": 0}\n    for s in signals:\n        buy = s[\"direction\"] == \"BUY\"\n        entry, sl, tp = float(s[\"entry\"]), float(s[\"sl\"]), float(s[\"tp\"])\n        if (entry - sl if buy else sl - entry) <= 0 or (tp - entry if buy else entry - tp) <= 0:\n            cancelled[\"سفارش_نامعتبر\"] += 1\n            continue\n        j0 = int(np.searchsorted(t, np.datetime64(pd.Timestamp(s[\"time\"])), \"left\"))\n        j1 = int(np.searchsorted(t, np.datetime64(pd.Timestamp(s[\"expire\"])), \"left\"))\n        if buy:\n            jf = _first(lambda r: l[r] + spread <= entry, j0, j1)\n            jt = _first(lambda r: h[r] >= tp, j0, j1)\n        else:\n            jf = _first(lambda r: h[r] >= entry, j0, j1)\n            jt = _first(lambda r: l[r] + spread <= tp, j0, j1)\n        if jf >= j1 or jt < jf:\n            cancelled[\"تارگت_پیش_از_ورود\" if jt < min(jf, j1) else \"تمام_شدن_زمان\"] += 1\n            continue\n        # پر شدن: اگر کندل با شکاف از ورود رد شده باشد، با قیمت بهتر (باز شدن) پر می‌شود\n        eff = min(entry, o[jf] + spread) if buy else max(entry, o[jf])\n        risk = (eff - sl) if buy else (sl - eff)\n        trig = eff + PARTIAL_AT_R * risk if buy else eff - PARTIAL_AT_R * risk\n        if buy:\n            sl_hit = lambda r: l[r] <= sl\n            tp_hit = lambda r: h[r] >= tp\n            pt_hit = lambda r: h[r] >= trig\n        else:\n            sl_hit = lambda r: h[r] + spread >= sl\n            tp_hit = lambda r: l[r] + spread <= tp\n            pt_hit = lambda r: l[r] + spread <= trig\n        if sl_hit(slice(jf, jf + 1))[0]:                    # کندل ورود: فقط حدضرر\n            js, jtp, jp = jf, n, n\n        else:\n            js = _first(sl_hit, jf + 1, n)\n            jtp = _first(tp_hit, jf + 1, min(js + 1, n))\n            jp = _first(pt_hit, jf + 1, min(js + 1, n)) if PARTIAL_FRAC > 0 else n\n        if js < n and js <= jtp:\n            jx, px, why = js, sl, (\"حدضرر\" if js < jtp else \"هر دو در یک کندل: حدضرر\")\n        elif jtp < n:\n            jx, px, why = jtp, tp, \"حدسود\"\n        else:\n            jx, px, why = n - 1, (c[-1] if buy else c[-1] + spread), \"پایان دیتا\"\n        banked, frac = 0.0, 1.0\n        if jp < js and jp <= jx:                             # سیو سود فقط اگر در همان کندل حدضرر نخورده\n            banked, frac = PARTIAL_AT_R * PARTIAL_FRAC, 1.0 - PARTIAL_FRAC\n        raw = (px - eff) / risk if buy else (eff - px) / risk\n        fill_t, exit_t = pd.Timestamp(t[jf]), pd.Timestamp(t[jx])\n        nights = max(0, (exit_t.normalize() - fill_t.normalize()).days)\n        swap = SWAP_SPREAD_MULT_PER_NIGHT * spread * nights\n        out.append({\"جهت\": \"خرید\" if buy else \"فروش\", \"زمان_سیگنال\": pd.Timestamp(s[\"time\"]),\n                    \"زمان_ورود\": fill_t, \"ورود\": eff, \"حدضرر\": sl, \"حدسود\": tp,\n                    \"زمان_خروج\": exit_t, \"قیمت_خروج\": float(px), \"علت_خروج\": why,\n                    \"سیو_سود\": banked > 0, \"نتیجه_R\": banked + frac * raw - swap / risk,\n                    \"هزینه_R\": (spread + swap) / risk})\n    return out, cancelled\n\n\ndef account(trades):\n    \"\"\"موجودی حساب: ریسک هر معامله = RISK_PER_TRADE × موجودی همان لحظه‌ی ورود (فقط معامله‌های بسته‌شده)\"\"\"\n    ev = []\n    for k, tr in enumerate(trades):\n        # در یک لحظه: اول خروج‌های قبلی، بعد ورودها، بعد خروجِ معامله‌هایی که در همان کندل ورود بسته شدند\n        ev.append((tr[\"زمان_خروج\"], 2 if tr[\"زمان_خروج\"] == tr[\"زمان_ورود\"] else 0, k))\n        ev.append((tr[\"زمان_ورود\"], 1, k))\n    eq, peak, dd = START_EQUITY, START_EQUITY, 0.0\n    risk_amt, curve = {}, [(trades[0][\"زمان_ورود\"], eq)] if trades else []\n    for when, kind, k in sorted(ev, key=lambda e: (e[0], e[1])):\n        if kind == 1:\n            risk_amt[k] = eq * RISK_PER_TRADE\n        else:\n            eq += risk_amt[k] * trades[k][\"نتیجه_R\"]\n            trades[k][\"سود_دلار\"] = risk_amt[k] * trades[k][\"نتیجه_R\"]\n            trades[k][\"موجودی\"] = eq\n            peak = max(peak, eq)\n            dd = max(dd, (peak - eq) / peak if peak > 0 else 0.0)\n            curve.append((when, eq))\n    return eq, dd, curve\n\n\ndef summary(trades, equity, max_dd):\n    if not trades:\n        return {\"تعداد\": 0}\n    R = pd.Series([x[\"نتیجه_R\"] for x in trades])\n    loss = R[R < 0].abs().sum()\n    return {\"تعداد\": len(R), \"درصد_برد\": round(float((R > 0).mean() * 100), 2),\n            \"فاکتور_سود\": round(float(R[R > 0].sum() / loss), 3) if loss > 0 else float(\"inf\"),\n            \"میانگین_R\": round(float(R.mean()), 3), \"جمع_R\": round(float(R.sum()), 2),\n            \"بازده_خالص٪\": round(float((equity - START_EQUITY) / START_EQUITY * 100), 2),\n            \"حداکثر_افت٪\": round(max_dd * 100, 2),\n            \"هزینه_میانه_R\": round(float(pd.Series([x[\"هزینه_R\"] for x in trades]).median()), 3)}\n\n\ndef yearly(trades):\n    if not trades:\n        return pd.DataFrame()\n    df = pd.DataFrame(trades)\n    df[\"سال\"] = pd.to_datetime(df[\"زمان_خروج\"]).dt.year\n    g = df.groupby(\"سال\")[\"نتیجه_R\"]\n    return pd.DataFrame({\"تعداد\": g.size(), \"درصد_برد\": (g.apply(lambda r: (r > 0).mean() * 100)).round(1),\n                         \"جمع_R\": g.sum().round(2)}).reset_index()\n\n\ndef save_chart(curve, path):\n    try:\n        import matplotlib\n        matplotlib.use(\"Agg\")\n        import matplotlib.pyplot as plt\n    except Exception:\n        return False\n    fig, ax = plt.subplots(figsize=(10, 4))\n    ax.plot([p[0] for p in curve], [p[1] for p in curve], color=\"#1f9d6b\", lw=1.6)\n    ax.set_title(f\"{SYMBOL} equity\")\n    ax.grid(alpha=0.3)\n    fig.tight_layout()\n    fig.savefig(path, dpi=120)\n    plt.close(fig)\n    return True\n\n\n# ============================================================================\ndef run(data_dir=None, strategy=demo_strategy, out_dir=None, quiet=False):\n    data_dir = data_dir or DATA_DIR\n    out_dir = out_dir or (OUT_DIR if data_dir == DATA_DIR else os.path.join(data_dir, \"نتیجه_بکتست\"))\n    say = (lambda *a: None) if quiet else print\n    sig_df, m1 = load_data(data_dir, SYMBOL, SIGNAL_TF)\n    span = pd.Timedelta(minutes=int(SIGNAL_TF)) if SIGNAL_TF.isdigit() else pd.Timedelta(SIGNAL_TF)\n    spread = load_spread(data_dir, SYMBOL)\n    bars = m1 if m1 is not None else sig_df\n    if m1 is None:\n        say(f\"⚠️ دیتای ۱دقیقه نیست — شبیه‌سازی روی همان کندل‌های {SIGNAL_TF} (دقت کمتر).\")\n    t0 = max(pd.Timestamp(START) if START else bars[\"time\"].iloc[0], bars[\"time\"].iloc[0])\n    t1 = min(pd.Timestamp(END) if END else bars[\"time\"].iloc[-1], bars[\"time\"].iloc[-1])\n    say(f\"نماد {SYMBOL} | از {t0:%Y-%m-%d} تا {t1:%Y-%m-%d} | اسپرد {spread}\")\n\n    ok, why = lookahead_check(strategy, sig_df, span)\n    say((\"✅ \" if ok else \"⛔ \") + \"آزمون دیدن آینده: \" + why)\n    if not ok:\n        say(\"بک‌تست اجرا نشد: نتیجه‌ی راهبردی که آینده را می‌بیند قابل اعتماد نیست.\")\n        return None\n\n    signals = [s for s in strategy(sig_df, span) if t0 <= pd.Timestamp(s[\"time\"]) <= t1]\n    bars = bars[(bars[\"time\"] >= t0) & (bars[\"time\"] <= t1)].reset_index(drop=True)\n    trades, cancelled = simulate(signals, bars, spread)\n    trades.sort(key=lambda x: x[\"زمان_ورود\"])\n    equity, max_dd, curve = account(trades)\n    m = summary(trades, equity, max_dd)\n\n    os.makedirs(out_dir, exist_ok=True)\n    pd.DataFrame(trades).to_csv(os.path.join(out_dir, \"معاملات.csv\"), index=False, encoding=\"utf-8-sig\")\n    y = yearly(trades)\n    y.to_csv(os.path.join(out_dir, \"سال_به_سال.csv\"), index=False, encoding=\"utf-8-sig\")\n    lines = [f\"{k}: {v}\" for k, v in m.items()]\n    lines += [f\"سفارش‌ها: {len(signals)} | پر شد: {len(trades)} | لغو: \" +\n              \", \".join(f\"{k} {v}\" for k, v in cancelled.items())]\n    with open(os.path.join(out_dir, \"خلاصه.txt\"), \"w\", encoding=\"utf-8\") as f:\n        f.write(\"\\n\".join(lines) + \"\\n\\n\" + (y.to_string(index=False) if len(y) else \"\") + \"\\n\")\n    chart = curve and save_chart(curve, os.path.join(out_dir, \"نمودار_موجودی.png\"))\n    say(\"\\n\".join(lines))\n    if len(y):\n        say(y.to_string(index=False))\n    say(f\"خروجی‌ها در: {out_dir}\" + (\"\" if chart else \" (بدون نمودار — matplotlib نصب نیست)\"))\n    return {\"metrics\": m, \"trades\": trades, \"cancelled\": cancelled, \"signals\": len(signals)}\n\n\nif __name__ == \"__main__\":\n    try:\n        res = run(sys.argv[1] if len(sys.argv) > 1 else None)\n        code = 0 if res is not None else 2\n    except Exception as e:\n        print(f\"❌ خطا: {e}\")\n        code = 1\n    if os.environ.get(\"BACKTEST_FROM_BAT\") != \"1\" and sys.stdin and sys.stdin.isatty():\n        try:\n            input(\"\\nبرای بستن Enter بزن...\")\n        except Exception:\n            pass\n    sys.exit(code)\n"}, {"file": "watchdog.py", "name_fa": "نگهبان ربات", "name_en": "Robot watchdog", "desc_fa": "اگر ربات بسته شد یا گیر کرد، دوباره اجرایش می‌کند، دلیلش را از رویدادهای ویندوز پیدا می‌کند و در پیام‌رسان بله گزارش می‌دهد. برای هر رباتی که فایل ضربان بنویسد کار می‌کند.", "desc_en": "Restarts the robot if it closes or hangs, finds the cause in the Windows event log, and reports it on the Bale messenger. Works with any robot that writes a heartbeat file.", "test_fa": "آزموده با یک ربات ساختگی در سه حالت: ربات خاموش، ربات گیرکرده و خاموشی عمدی.", "test_en": "Tested against a fake robot in three scenarios: robot down, robot hung, and an intentional stop.", "lines": 524, "code": "# -*- coding: utf-8 -*-\n\"\"\"نگهبان ربات — اگر ربات از کار افتاد یا گیر کرد، دوباره راه‌اندازی‌اش می‌کند و در بله خبر می‌دهد.\n\nاجرا:  install_autostart.bat را یک بار با «Run as administrator» اجرا کن. از آن به بعد نگهبان\n       بدون پنجره اجرا می‌شود: با هر ورود به ویندوز، و هر ۵ دقیقه یک بار اگر بسته شده باشد.\n       (start_watchdog.bat فقط برای اجرای دستی با پنجره است.)\n\nچه می‌کند (هر ۱ دقیقه):\n  - ربات هر ۳۰ ثانیه فایل logs/heartbeat.txt را به‌روز می‌کند. اگر این فایل کهنه شد:\n      · پروسه‌ی ربات زنده ولی گیر کرده (۱۰ دقیقه بی‌ضربان) → بسته می‌شود تا start_robot.bat بالایش بیاورد\n      · پروسه‌ی ربات مرده (۳ دقیقه بی‌ضربان) → start_robot.bat در پنجره‌ی جدید اجرا می‌شود\n  - اگر بازار باز است و بیش از ۴ ساعت و ربع همگام‌سازی انجام نشده → هشدار در بله\n  - اگر ربات عمداً خاموش شده (Ctrl+C یا stop_robot.bat) → دست نمی‌زند\n  - هر بار ربات از کار بیفتد، دلیلش را پیدا و در بله گزارش می‌کند: دلیلی که خود ربات قبل از\n    بسته شدن نوشته (کرش، بستن پنجره، Sign out)، ری‌استارت ویندوز، و رویدادهای ثبت‌شده‌ی ویندوز\n    (آپدیت، خاموشی ناگهانی، Sign out، کرش برنامه)\n\nبرای هر رباتی کار می‌کند، به شرطی که ربات این‌ها را بنویسد (کنار همین فایل، در پوشه‌ی logs):\n  - heartbeat.txt   هر ۳۰ ثانیه دوباره نوشته شود (متنش = وضعیت کوتاه ربات؛ اگر «تعطیل» در آن\n                    باشد یعنی بازار بسته است و هشدار همگام‌سازی داده نمی‌شود)\n  - robot.pid       شماره‌ی پروسه‌ی ربات\n  - robot_stopped.flag   وقتی ربات عمداً خاموش شد (تا نگهبان دوباره روشنش نکند)\n  - last_sync.txt   (دلخواه) زمان آخرین همگام‌سازی به شکل ISO\n  - last_exit.json  (دلخواه) {\"running\": false, \"reason\": \"...\", \"detail\": \"...\"} قبل از بسته شدن\nو start_robot.bat کنار همین فایل باشد. توکن بله از متغیر BALE_TOKEN یا فایل bale_token.txt خوانده\nمی‌شود و شناسه‌ی گفتگو از logs/bale_chat_id.txt — هیچ رمزی داخل کد نیست.\n\"\"\"\n\nimport os\nimport sys\nimport json\nimport time\nimport datetime as dt\nimport subprocess\nimport urllib.request\n\n# ================== تنظیمات ==================\nCHECK_SECONDS = 60          # هر چند ثانیه وضعیت را چک کند\nHUNG_MINUTES = 10           # ربات زنده ولی این‌قدر بی‌ضربان → گیر کرده → بسته و دوباره اجرا می‌شود\nDEAD_MINUTES = 3            # ربات مرده و این‌قدر بی‌ضربان → دوباره اجرا می‌شود\nRESTART_WAIT_MINUTES = 4    # بعد از هر تلاش راه‌اندازی، این‌قدر صبر تا ربات بالا بیاید\nSYNC_ALERT_HOURS = 4.25     # بازار باز ولی این‌قدر همگام‌سازی نشده → هشدار\nREMIND_MINUTES = 30         # تا مشکل حل نشده، هر چند دقیقه یادآوری در بله\n# =============================================\n\nHERE = os.path.dirname(os.path.abspath(__file__))\nLOGS = os.path.join(HERE, \"logs\")\nBOT_BAT = os.path.join(HERE, \"start_robot.bat\")\nHEARTBEAT = os.path.join(LOGS, \"heartbeat.txt\")\nPID_FILE = os.path.join(LOGS, \"robot.pid\")\nSTOP_FLAG = os.path.join(LOGS, \"robot_stopped.flag\")\nLAST_SYNC = os.path.join(LOGS, \"last_sync.txt\")\nLOG_FILE = os.path.join(LOGS, \"نگهبان.txt\")\nEXIT_FILE = os.path.join(LOGS, \"last_exit.json\")\nCRASH_FILE = os.path.join(LOGS, \"crash_dump.txt\")\nREPORTED_FILE = os.path.join(LOGS, \"last_down_report.txt\")\nEXIT_NO_RESTART = 3\nTASK_NAME = \"ZoneRobot_Watchdog\"\n\n\ndef log(msg, bale=False):\n    line = f\"[{dt.datetime.now():%Y-%m-%d %H:%M:%S}] {msg}\"\n    try:\n        print(line, flush=True)\n    except Exception:\n        pass\n    try:\n        os.makedirs(LOGS, exist_ok=True)\n        with open(LOG_FILE, \"a\", encoding=\"utf-8\") as f:\n            f.write(line + \"\\n\")\n    except Exception:\n        pass\n    if bale:\n        bale_send(\"🛡 نگهبان: \" + msg)\n\n\n# ---------------- بله (همان توکن و چت ربات) ----------------\ndef _read(path):\n    try:\n        with open(path, encoding=\"utf-8-sig\") as f:\n            return f.read().strip()\n    except Exception:\n        return \"\"\n\n\ndef bale_send(text):\n    token = os.environ.get(\"BALE_TOKEN\", \"\").strip() or _read(os.path.join(HERE, \"bale_token.txt\"))\n    chat = _read(os.path.join(LOGS, \"bale_chat_id.txt\"))\n    if not token or not chat:\n        return\n    try:\n        data = json.dumps({\"chat_id\": chat, \"text\": text}).encode(\"utf-8\")\n        req = urllib.request.Request(f\"https://tapi.bale.ai/bot{token}/sendMessage\", data=data,\n                                     headers={\"Content-Type\": \"application/json\"})\n        urllib.request.urlopen(req, timeout=10)\n    except Exception as e:\n        try:\n            print(f\"[بله] ارسال نشد: {e}\", flush=True)\n        except Exception:\n            pass\n\n\n# ---------------- وضعیت ربات ----------------\ndef heartbeat_info():\n    \"\"\"(چند دقیقه از آخرین ضربان گذشته, متن وضعیت)\"\"\"\n    try:\n        age = (time.time() - os.path.getmtime(HEARTBEAT)) / 60.0\n    except Exception:\n        return None, \"\"\n    return age, _read(HEARTBEAT)\n\n\ndef robot_pid():\n    try:\n        return int(_read(PID_FILE))\n    except Exception:\n        return None\n\n\ndef pid_alive(pid):\n    if not pid:\n        return False\n    if os.name == \"nt\":\n        import ctypes\n        from ctypes import wintypes\n        k32 = ctypes.WinDLL(\"kernel32\", use_last_error=True)\n        k32.OpenProcess.restype = wintypes.HANDLE\n        k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)\n        h = k32.OpenProcess(0x1000, False, pid)        # PROCESS_QUERY_LIMITED_INFORMATION\n        if not h:\n            return False\n        try:\n            code = wintypes.DWORD()\n            ok = k32.GetExitCodeProcess(h, ctypes.byref(code))\n            if not (bool(ok) and code.value == 259):    # STILL_ACTIVE\n                return False\n            # شماره‌ی پروسه ممکن است بعد از بسته شدن ربات به برنامه‌ی دیگری رسیده باشد:\n            # فقط اگر واقعاً پایتون است، «ربات» حساب می‌شود (وگرنه ممکن بود برنامه‌ی دیگری بسته شود)\n            buf = ctypes.create_unicode_buffer(1024)\n            size = wintypes.DWORD(1024)\n            if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):\n                return \"python\" in os.path.basename(buf.value).lower()\n            return True\n        finally:\n            k32.CloseHandle(h)\n    try:\n        os.waitpid(pid, os.WNOHANG)                     # اگر فرزند خود نگهبان بوده و مرده، جمعش کن (زامبی نماند)\n    except Exception:\n        pass\n    try:\n        os.kill(pid, 0)                                 # فقط لینوکس/مک (روی ویندوز این پروسه را می‌کشد!)\n        return True\n    except Exception:\n        return False\n\n\ndef kill_pid(pid):\n    if os.name == \"nt\":\n        subprocess.run([\"taskkill\", \"/PID\", str(pid), \"/F\"], capture_output=True)\n    else:\n        try:\n            os.kill(pid, 9)\n        except Exception:\n            pass\n\n\ndef unblock_files():\n    \"\"\"فایل‌هایی که از اینترنت (گیت‌هاب) دانلود شده‌اند علامت «از اینترنت آمده» دارند و ویندوز قبل از\n    اجرایشان پنجره‌ی تأیید (Security Warning) نشان می‌دهد — یعنی ربات تا کسی «Run» را نزند بالا\n    نمی‌آید. این علامت از فایل‌های پوشه‌ی ربات برداشته می‌شود (مثل تیک Unblock در Properties).\"\"\"\n    if os.name != \"nt\":\n        return\n    for fn in os.listdir(HERE):\n        if fn.lower().endswith((\".bat\", \".py\", \".txt\")):\n            try:\n                os.remove(os.path.join(HERE, fn) + \":Zone.Identifier\")\n            except Exception:\n                pass\n\n\ndef start_robot():\n    \"\"\"start_robot.bat را در پنجره‌ی جدید اجرا می‌کند — بدون پنجره‌ی تأیید ویندوز.\n    ربات از «گروه پروسه‌های» Task Scheduler جدا اجرا می‌شود تا اگر نگهبان بسته یا دوباره اجرا شد،\n    ربات دست نخورد.\"\"\"\n    if not os.path.exists(BOT_BAT):\n        raise FileNotFoundError(f\"start_robot.bat کنار نگهبان نیست: {BOT_BAT}\")\n    if os.name != \"nt\":\n        subprocess.Popen([\"sh\", BOT_BAT], cwd=HERE)\n        return\n    unblock_files()\n    cmd = [\"cmd.exe\", \"/c\", \"call\", BOT_BAT]\n    new_console = 0x00000010            # CREATE_NEW_CONSOLE\n    breakaway = 0x01000000              # CREATE_BREAKAWAY_FROM_JOB\n    for flags in (new_console | breakaway, new_console):\n        try:\n            subprocess.Popen(cmd, cwd=HERE, creationflags=flags, close_fds=True)\n            return\n        except OSError:\n            continue\n    os.startfile(BOT_BAT)               # آخرین راه: مثل دابل‌کلیک\n\n\ndef minutes_since_sync():\n    try:\n        t = dt.datetime.fromisoformat(_read(LAST_SYNC))\n    except Exception:\n        return None\n    return (dt.datetime.now() - t).total_seconds() / 60.0\n\n\ndef single_instance():\n    if os.name != \"nt\":\n        return True\n    try:\n        import ctypes\n        from ctypes import wintypes\n        k32 = ctypes.WinDLL(\"kernel32\", use_last_error=True)\n        k32.CreateMutexW.restype = wintypes.HANDLE\n        k32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)\n        for scope in (\"Global\", \"Local\"):\n            h = k32.CreateMutexW(None, False, f\"{scope}\\\\ZoneRobotWatchdog\")\n            if h:\n                if ctypes.get_last_error() == 183:\n                    return False\n                globals()[\"_MUTEX\"] = h\n                return True\n    except Exception:\n        pass\n    return True\n\n\n# ---------------- پیدا کردن دلیل از کار افتادن ربات ----------------\nEVENT_NAMES = {\n    \"1074\": \"ری‌استارت/خاموش کردن ویندوز توسط یک برنامه یا کاربر (اغلب آپدیت ویندوز)\",\n    \"6006\": \"ویندوز به‌طور عادی خاموش شد\",\n    \"6008\": \"ویندوز ناگهانی خاموش شده بود (قطع برق، هنگ یا ری‌ست سخت VPS)\",\n    \"41\": \"سیستم بدون خاموش شدن درست دوباره روشن شد\",\n    \"1001\": \"صفحه‌ی آبی ویندوز (BugCheck)\",\n    \"7002\": \"کاربر از ویندوز خارج شد (Sign out) — همه‌ی برنامه‌ها از جمله ربات بسته می‌شوند\",\n    \"4647\": \"کاربر Sign out کرد — همه‌ی برنامه‌ها از جمله ربات بسته می‌شوند\",\n    \"1000\": \"برنامه کرش کرد (Application Error)\",\n    \"1002\": \"برنامه هنگ کرد و ویندوز آن را بست (Application Hang)\",\n}\n\n\ndef _read_json(path):\n    try:\n        with open(path, encoding=\"utf-8\") as f:\n            return json.load(f)\n    except Exception:\n        return None\n\n\ndef last_heartbeat_ts():\n    try:\n        return os.path.getmtime(HEARTBEAT)\n    except Exception:\n        return None\n\n\ndef already_reported(since_ts):\n    return bool(since_ts) and _read(REPORTED_FILE) == str(int(since_ts))\n\n\ndef mark_reported(since_ts):\n    try:\n        with open(REPORTED_FILE, \"w\", encoding=\"utf-8\") as f:\n            f.write(str(int(since_ts or 0)))\n    except Exception:\n        pass\n\n\ndef boot_time():\n    \"\"\"زمان روشن شدن ویندوز (برای فهمیدن ری‌استارت VPS)\"\"\"\n    if os.name != \"nt\":\n        return None\n    try:\n        import ctypes\n        k32 = ctypes.windll.kernel32\n        k32.GetTickCount64.restype = ctypes.c_ulonglong\n        return time.time() - k32.GetTickCount64() / 1000.0\n    except Exception:\n        return None\n\n\ndef _events(log_name, ids, since_ts, max_n=6):\n    \"\"\"رویدادهای ثبت‌شده‌ی ویندوز از کمی قبل از since_ts تا الان (با wevtutil خود ویندوز).\"\"\"\n    if os.name != \"nt\":\n        return []\n    ms = int(max(120, time.time() - since_ts + 300) * 1000)\n    q = (\"*[System[(\" + \" or \".join(f\"EventID={i}\" for i in ids) +\n         f\") and TimeCreated[timediff(@SystemTime) <= {ms}]]]\")\n    try:\n        r = subprocess.run([\"wevtutil\", \"qe\", log_name, f\"/q:{q}\", \"/f:text\", \"/rd:true\", f\"/c:{max_n}\"],\n                           capture_output=True, timeout=30, creationflags=0x08000000)   # بدون پنجره\n    except Exception:\n        return []\n    raw = r.stdout or b\"\"\n    try:\n        txt = raw.decode(\"utf-8\")\n    except UnicodeDecodeError:\n        txt = raw.decode(\"mbcs\", \"replace\")\n    out, cur, in_desc = [], None, False\n    for line in txt.splitlines():\n        t = line.strip()\n        if t.startswith(\"Event[\"):\n            if cur:\n                out.append(cur)\n            cur, in_desc = {\"date\": \"\", \"id\": \"\", \"desc\": \"\"}, False\n        elif cur is None:\n            continue\n        elif t.startswith(\"Date:\"):\n            cur[\"date\"] = t[5:].strip()[:19].replace(\"T\", \" \")\n        elif t.startswith(\"Event ID:\"):\n            cur[\"id\"] = t[9:].strip()\n        elif t.startswith(\"Description:\"):\n            in_desc, cur[\"desc\"] = True, t[12:].strip()\n        elif in_desc and t:\n            cur[\"desc\"] = (cur[\"desc\"] + \" \" + t).strip()\n    if cur:\n        out.append(cur)\n    return out\n\n\ndef diagnose(since_ts):\n    \"\"\"فهرست دلیل‌های احتمالی از کار افتادن ربات بعد از لحظه‌ی since_ts (آخرین ضربان).\"\"\"\n    found = []\n    ex = _read_json(EXIT_FILE)\n    if ex and not ex.get(\"running\") and ex.get(\"reason\"):\n        d = (ex.get(\"detail\") or \"\").strip()\n        found.append(f\"خود ربات قبل از بسته شدن نوشت: {ex['reason']}\" + (f\" | {d[-300:]}\" if d else \"\"))\n    bt = boot_time()\n    if bt and since_ts and bt > since_ts - 120:\n        found.append(f\"ویندوز (VPS) ساعت {dt.datetime.fromtimestamp(bt):%Y-%m-%d %H:%M} دوباره روشن شده — \"\n                     f\"یعنی ری‌استارت شده و همه‌ی برنامه‌ها بسته شده‌اند.\")\n    for log_name, ids, keys in ((\"System\", (1074, 6006, 6008, 41, 1001, 7002), None),\n                                (\"Security\", (4647,), None),\n                                (\"Application\", (1000, 1002), (\"python\", \"terminal64\", \"metatrader\", \"cmd.exe\", \"conhost\"))):\n        for e in _events(log_name, ids, since_ts):\n            if keys and not any(k in e[\"desc\"].lower() for k in keys):\n                continue\n            found.append(f\"رویداد ویندوز {e['id']} در {e['date']}: {EVENT_NAMES.get(e['id'], '')} | {e['desc'][:220]}\")\n    try:\n        if since_ts and os.path.getmtime(CRASH_FILE) > since_ts - 60:\n            tail = _read(CRASH_FILE)[-1500:]\n            if \"Fatal Python error\" in tail or \"fatal exception\" in tail.lower():\n                found.append(\"کرش شدید داخل پایتون یا کتابخانه‌ی متاتریدر (crash_dump.txt): \" + tail[-400:])\n    except Exception:\n        pass\n    if not found:\n        found.append(\"ردی در ویندوز پیدا نشد → به احتمال زیاد پنجره‌ی ربات بسته شده (دکمه‌ی X، End task در \"\n                     \"Task Manager، یا بسته شدن پنجره‌ها هنگام خروج از ریموت) یا پروسه از بیرون بسته شده.\")\n    return found\n\n\n# ---------------- ثبت در Task Scheduler ویندوز ----------------\ndef install_task():\n    \"\"\"نگهبان را در Task Scheduler ثبت می‌کند: با ورود به ویندوز + هر ۵ دقیقه یک بار (اگر بسته شده\n    باشد دوباره اجرا می‌شود)، بدون پنجره (pythonw) تا اشتباهی بسته نشود، و بدون سقف زمان اجرا.\"\"\"\n    from xml.sax.saxutils import escape\n    pyw = os.path.join(os.path.dirname(sys.executable), \"pythonw.exe\")\n    if not os.path.exists(pyw):\n        pyw = sys.executable\n    user = f\"{os.environ.get('USERDOMAIN', '')}\\\\{os.environ.get('USERNAME', '')}\".strip(\"\\\\\")\n    xml = f\"\"\"<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\n  <RegistrationInfo><Description>Zone robot watchdog - restarts the trading robot<\/Description><\/RegistrationInfo>\n  <Triggers>\n    <LogonTrigger><Enabled>true<\/Enabled><UserId>{escape(user)}<\/UserId><\/LogonTrigger>\n    <TimeTrigger>\n      <Repetition><Interval>PT5M<\/Interval><StopAtDurationEnd>false<\/StopAtDurationEnd><\/Repetition>\n      <StartBoundary>2026-01-01T00:00:00<\/StartBoundary><Enabled>true<\/Enabled>\n    <\/TimeTrigger>\n  <\/Triggers>\n  <Principals>\n    <Principal id=\"Author\"><UserId>{escape(user)}<\/UserId><LogonType>InteractiveToken<\/LogonType><RunLevel>HighestAvailable<\/RunLevel><\/Principal>\n  <\/Principals>\n  <Settings>\n    <MultipleInstancesPolicy>IgnoreNew<\/MultipleInstancesPolicy>\n    <DisallowStartIfOnBatteries>false<\/DisallowStartIfOnBatteries>\n    <StopIfGoingOnBatteries>false<\/StopIfGoingOnBatteries>\n    <AllowHardTerminate>true<\/AllowHardTerminate>\n    <StartWhenAvailable>true<\/StartWhenAvailable>\n    <RunOnlyIfNetworkAvailable>false<\/RunOnlyIfNetworkAvailable>\n    <IdleSettings><StopOnIdleEnd>false<\/StopOnIdleEnd><RestartOnIdle>false<\/RestartOnIdle><\/IdleSettings>\n    <AllowStartOnDemand>true<\/AllowStartOnDemand>\n    <Enabled>true<\/Enabled>\n    <Hidden>false<\/Hidden>\n    <RunOnlyIfIdle>false<\/RunOnlyIfIdle>\n    <WakeToRun>false<\/WakeToRun>\n    <ExecutionTimeLimit>PT0S<\/ExecutionTimeLimit>\n    <Priority>7<\/Priority>\n    <RestartOnFailure><Interval>PT1M<\/Interval><Count>999<\/Count><\/RestartOnFailure>\n  <\/Settings>\n  <Actions Context=\"Author\">\n    <Exec><Command>{escape(pyw)}<\/Command><Arguments>\"{escape(os.path.abspath(__file__))}\"<\/Arguments><WorkingDirectory>{escape(HERE)}<\/WorkingDirectory><\/Exec>\n  <\/Actions>\n<\/Task>\n\"\"\"\n    xml_path = os.path.join(LOGS, \"watchdog_task.xml\")\n    os.makedirs(LOGS, exist_ok=True)\n    with open(xml_path, \"w\", encoding=\"utf-16\") as f:\n        f.write(xml)\n    subprocess.run([\"schtasks\", \"/Delete\", \"/TN\", TASK_NAME, \"/F\"], capture_output=True)\n    r = subprocess.run([\"schtasks\", \"/Create\", \"/TN\", TASK_NAME, \"/XML\", xml_path, \"/F\"],\n                       capture_output=True, text=True)\n    if r.returncode != 0:\n        print(\"❌ ثبت در Task Scheduler انجام نشد:\", (r.stdout or \"\") + (r.stderr or \"\"))\n        print(\"   روی install_autostart.bat راست‌کلیک کن و Run as administrator را بزن.\")\n        return 1\n    subprocess.run([\"schtasks\", \"/Run\", \"/TN\", TASK_NAME], capture_output=True)\n    print(\"✅ نگهبان ثبت شد و همین الان (بدون پنجره) اجرا شد.\")\n    print(\"   - با هر ورود به ویندوز و هر ۵ دقیقه یک بار چک می‌شود؛ اگر بسته شده باشد دوباره اجرا می‌شود.\")\n    print(\"   - گزارش‌هایش در بله و در فایل logs\\\\نگهبان.txt است.\")\n    print(f\"   - برای حذف:  schtasks /Delete /TN {TASK_NAME} /F\")\n    return 0\n\n\n# ---------------- حلقه‌ی اصلی ----------------\ndef main():\n    if not single_instance():\n        print(\"⛔ یک نگهبان دیگر در حال اجراست — این یکی بسته می‌شود.\")\n        return EXIT_NO_RESTART\n    log(\"========== نگهبان شروع به کار کرد ==========\")\n    unblock_files()\n    down_since = None          # از کی ربات بی‌ضربان است\n    last_start = 0.0           # آخرین تلاش برای راه‌اندازی\n    last_remind = 0.0\n    stop_noted = False\n    sync_alerted = False\n\n    while True:\n        try:\n            now = time.time()\n            if os.path.exists(STOP_FLAG):\n                if not stop_noted:\n                    stop_noted = True\n                    log(\"ربات عمداً خاموش شده (Ctrl+C یا stop_robot.bat) — روشنش نمی‌کنم تا خودت اجرایش کنی.\")\n                time.sleep(CHECK_SECONDS)\n                continue\n            stop_noted = False\n\n            age, status = heartbeat_info()\n            pid = robot_pid()\n            alive = pid_alive(pid)\n\n            healthy = age is not None and age < (HUNG_MINUTES if alive else DEAD_MINUTES)\n            if healthy:\n                if down_since is not None:\n                    log(f\"✅ ربات برگشت (آخرین ضربان {age:.1f} دقیقه پیش).\", bale=True)\n                    down_since = None\n                # بازار باز و ربات سالم، ولی همگام‌سازی ۴ساعته انجام نشده؟\n                ms = minutes_since_sync()\n                market_open = (\"تعطیل\" not in status)\n                if ms is not None and market_open and ms > SYNC_ALERT_HOURS * 60:\n                    if not sync_alerted:\n                        sync_alerted = True\n                        log(f\"⚠️ ربات روشن است ولی {ms / 60:.1f} ساعت است همگام‌سازی (بررسی کندل ۴ساعته) \"\n                            f\"انجام نداده — لاگ ربات را چک کن. وضعیت: {status}\", bale=True)\n                else:\n                    sync_alerted = False\n                time.sleep(CHECK_SECONDS)\n                continue\n\n            # ربات مشکل دارد\n            age_txt = \"نامعلوم\" if age is None else f\"{age:.0f} دقیقه\"\n            if down_since is None:\n                down_since = now\n                last_remind = now\n                since = last_heartbeat_ts() or (now - 3600)\n                if alive:\n                    why = [\"پروسه‌ی ربات زنده است ولی جواب نمی‌دهد (گیر کرده) — بسته و دوباره اجرا می‌شود.\"]\n                else:\n                    why = diagnose(since)\n                if not already_reported(since):\n                    mark_reported(since)\n                    log(f\"⚠️ ربات از کار افتاده — {age_txt} است ضربانی نزده (پروسه زنده؟ {alive}). \"\n                        f\"دارم دوباره روشنش می‌کنم.\\nدلیل احتمالی:\\n- \" + \"\\n- \".join(why), bale=True)\n                else:\n                    log(f\"⚠️ ربات هنوز خاموش است ({age_txt} بی‌ضربان) — دلیلش قبلاً گزارش شده؛ دوباره روشنش می‌کنم.\")\n            elif now - last_remind > REMIND_MINUTES * 60:\n                last_remind = now\n                log(f\"⚠️ ربات هنوز برنگشته ({age_txt} بی‌ضربان) — دارم تلاش می‌کنم.\", bale=True)\n\n            if now - last_start < RESTART_WAIT_MINUTES * 60:\n                time.sleep(CHECK_SECONDS)\n                continue\n            last_start = now\n            if alive:\n                log(f\"ربات زنده است ولی گیر کرده (پروسه {pid}) — بسته می‌شود تا start_robot.bat دوباره اجرایش کند.\")\n                kill_pid(pid)\n                time.sleep(20)\n                if not pid_alive(pid) and (heartbeat_info()[0] or 99) >= DEAD_MINUTES:\n                    # اگر پنجره‌ی start_robot.bat هم بسته شده باشد، کسی ربات را بالا نمی‌آورد\n                    time.sleep(15)\n                    if not pid_alive(robot_pid()):\n                        start_robot()\n                        log(\"start_robot.bat اجرا شد.\")\n            else:\n                start_robot()\n                log(\"ربات خاموش بود — start_robot.bat اجرا شد.\")\n            time.sleep(CHECK_SECONDS)\n        except KeyboardInterrupt:\n            log(\"نگهبان دستی متوقف شد.\")\n            return EXIT_NO_RESTART\n        except Exception as e:\n            log(f\"❌ خطای نگهبان: {e}\")\n            try:\n                time.sleep(CHECK_SECONDS)\n            except KeyboardInterrupt:\n                return EXIT_NO_RESTART\n\n\nif __name__ == \"__main__\":\n    if \"--install\" in sys.argv:\n        code = install_task()\n        if os.environ.get(\"WATCHDOG_FROM_BAT\") != \"1\":\n            try:\n                input(\"\\nبرای بستن Enter بزن...\")\n            except Exception:\n                pass\n        sys.exit(code)\n    sys.exit(main() or 0)\n"}, {"file": "history_downloader.py", "name_fa": "دانلودر تاریخچه", "name_en": "History downloader", "desc_fa": "کندل‌های ۱دقیقه، ۱۵دقیقه و ۴ساعته را سال‌به‌سال و از جدید به قدیم از متاتریدر ۵ می‌گیرد، سال‌های کامل را نگه می‌دارد و برای هر نماد یک فایل فشرده‌ی آماده‌ی بکتست می‌سازد.", "desc_en": "Downloads 1-minute, 15-minute and 4-hour candles from MetaTrader 5 year by year, newest first, keeps finished years, and builds one backtest-ready archive per symbol.", "test_fa": "آزموده با یک متاتریدر ساختگی: خروجی مرتب و بدون کندل تکراری.", "test_en": "Tested against a fake MetaTrader: sorted output with no duplicate candles.", "lines": 388, "code": "# -*- coding: utf-8 -*-\n\"\"\"دانلود تاریخچه‌ی کندل از متاتریدر ۵ — سال‌به‌سال\n\nبخشی از سیستم معامله‌گری خودکار حسین شیردل (ساخته‌شده با هوش مصنوعی).\n\nاجرا:  python history_downloader.py      (متاتریدر ۵ باز و لاگین باشد)\nپیش‌نیاز: pip install MetaTrader5 pandas\n\nچه می‌کند:\n  - برای هر نماد، هر تایم‌فریم را سال‌به‌سال و از جدید به قدیم از متاتریدر می‌گیرد (درخواست‌های بزرگ\n    کندل ۱دقیقه متاتریدر را گیر می‌اندازد؛ تکه‌های کوچک نه). جایی که تاریخچه‌ی بروکر تمام شود، می‌ایستد.\n  - هر سالِ تمام‌شده جدا ذخیره می‌شود؛ اگر دانلود نصفه بماند، دفعه‌ی بعد آن سال‌ها دوباره گرفته نمی‌شوند.\n  - آخر کار همه‌ی سال‌ها کنار هم گذاشته می‌شوند و برای هر نماد یک ZIP ساخته می‌شود\n    (مثلاً XAUUSD.zip با XAUUSD-1.csv، XAUUSD-15.csv و XAUUSD-240.csv) به فرمت خود متاتریدر.\n  - فقط کندل‌های «بسته‌شده» ذخیره می‌شوند.\n  - «Max bars in chart» متاتریدر باید Unlimited باشد، وگرنه سال‌های قدیمی‌تر نمی‌آیند.\n\"\"\"\n\nimport os\nimport sys\nimport time\nimport zipfile\nimport datetime as dt\n\n# =====================================================================================\n#                    تنظیمات\n# =====================================================================================\nYEARS_BACK = 6                 # از چند سال قبل تا امروز (عدد اعشاری هم می‌شود)\nSTART_DATE = \"\"                # یا تاریخ دقیق، مثل \"2020-01-01\" (اگر پر شود YEARS_BACK نادیده گرفته می‌شود)\nEND_DATE = \"\"                  # خالی = تا همین الان\nWARMUP_DAYS = 120              # تایم‌های بالاتر از ۵دقیقه از این چند روز قبل از شروع گرفته می‌شوند\nYEARS_DIR_NAME = \"سال_به_سال\"   # پوشه‌ی سال‌های ذخیره‌شده (داخل OUT_DIR)\nTIMEFRAMES = [                 # (\"برچسب اسم فایل\", \"تایم‌فریم متاتریدر\")\n    (\"1\",   \"M1\"),\n    (\"15\",  \"M15\"),\n    (\"240\", \"H4\"),\n]\nSYMBOLS = [\"XAUUSD\"]           # اگر نزد بروکر پسوند دارند (مثلاً XAUUSD.m)، خودش پیدا می‌کند\nOUT_DIR = os.path.join(os.path.expanduser(\"~\"), \"Desktop\", \"history_data\")\nTERMINAL_PATH = \"\"             # مسیر terminal64.exe — فقط اگر چند متاتریدر نصب است\n# =====================================================================================\n\nTF_SECONDS = {\"M1\": 60, \"M5\": 300, \"M15\": 900, \"M30\": 1800, \"H1\": 3600,\n              \"H4\": 14400, \"D1\": 86400, \"W1\": 604800}\nBARS_PER_YEAR = {\"M1\": 374400, \"M5\": 74880, \"M15\": 24960, \"M30\": 12480, \"H1\": 6240,\n                 \"H4\": 1560, \"D1\": 260, \"W1\": 52}\nLTF_NAMES = (\"M1\", \"M5\")      # بدون گرم‌کردن (فقط از START_DATE)\nYEAR_COMPLETE = 0.85          # سالی ذخیره می‌شود که دست‌کم این سهم از کندل‌های یک سال کامل را داشته باشد\n\n\ndef _fail(msg):\n    \"\"\"پیام خطا + (اگر مستقیم دابل‌کلیک شده) صبر تا کاربر پیام را بخواند.\"\"\"\n    print(msg)\n    if os.environ.get(\"EXPORT_FROM_BAT\") != \"1\":\n        try:\n            input(\"\\nبرای بستن پنجره Enter بزن...\")\n        except Exception:\n            pass\n    sys.exit(1)\n\n\ntry:\n    import pandas as pd\nexcept ImportError:\n    _fail(\"پکیج pandas نصب نیست. در CMD بزن:  pip install pandas\")\ntry:\n    import MetaTrader5 as mt5\nexcept ImportError:\n    _fail(\"پکیج MetaTrader5 نصب نیست. در CMD بزن:  pip install MetaTrader5\")\n\n\ndef parse_date(s):\n    return dt.datetime.strptime(s.strip(), \"%Y-%m-%d\").replace(tzinfo=dt.timezone.utc)\n\n\ndef date_range():\n    now = dt.datetime.now(dt.timezone.utc)\n    end = parse_date(END_DATE) + dt.timedelta(days=1) if END_DATE.strip() else now + dt.timedelta(days=1)\n    if START_DATE.strip():\n        start = parse_date(START_DATE)\n    else:\n        start = now - dt.timedelta(days=float(YEARS_BACK) * 365.25)\n    return start, end\n\n\ndef check_settings():\n    problems = []\n    labels = [lab for lab, _ in TIMEFRAMES]\n    if not labels:\n        problems.append(\"TIMEFRAMES خالی است؛ حداقل یک تایم‌فریم لازم است.\")\n    for lab, name in TIMEFRAMES:\n        if name not in TF_SECONDS:\n            problems.append(f\"تایم‌فریم «{name}» شناخته‌شده نیست. مجازها: {', '.join(TF_SECONDS)}\")\n    if len(set(labels)) != len(labels):\n        problems.append(\"یک برچسب دو بار در TIMEFRAMES آمده است.\")\n    if START_DATE.strip():\n        try:\n            parse_date(START_DATE)\n        except ValueError:\n            problems.append(f\"فرمت START_DATE اشتباه است: «{START_DATE}» — درستش مثل 2020-01-01\")\n    if END_DATE.strip():\n        try:\n            parse_date(END_DATE)\n        except ValueError:\n            problems.append(f\"فرمت END_DATE اشتباه است: «{END_DATE}» — درستش مثل 2026-08-31\")\n    return problems\n\n\ndef connect():\n    ok = mt5.initialize(path=TERMINAL_PATH) if TERMINAL_PATH.strip() else mt5.initialize()\n    if not ok:\n        print(f\"⛔ اتصال به متاتریدر برقرار نشد: {mt5.last_error()}\")\n        print(\"   متاتریدر ۵ باید باز و لاگین باشد.\")\n        return None\n    acc = mt5.account_info()\n    ti = mt5.terminal_info()\n    if acc is not None:\n        print(f\"✅ وصل شد | حساب {acc.login} ({acc.server})\")\n    return ti\n\n\ndef resolve(base):\n    \"\"\"اسم نماد نزد بروکر (با پسوند احتمالی).\"\"\"\n    if mt5.symbol_info(base) is not None:\n        mt5.symbol_select(base, True)\n        return base\n    cands = mt5.symbols_get(f\"*{base}*\")\n    if cands:\n        name = sorted((c.name for c in cands), key=len)[0]\n        mt5.symbol_select(name, True)\n        return name\n    return None\n\n\ndef _fetch_range(name, tf, start, end):\n    \"\"\"یک تکه از بازه. اگر متاتریدر هنوز تاریخچه را از سرور نگرفته باشد،\n    چند بار صبر می‌کند و دوباره می‌پرسد.\"\"\"\n    rates = None\n    best = 0\n    t0, t1 = int(start.timestamp()), int(end.timestamp())\n    for attempt in range(4):\n        rates = mt5.copy_rates_range(name, tf, start, end)\n        if rates is not None and len(rates):         # متاتریدر گاهی یک کندل بی‌ربط بیرون از بازه می‌دهد\n            rates = rates[(rates[\"time\"] >= t0) & (rates[\"time\"] < t1)]\n        n = 0 if rates is None else len(rates)\n        # تاریخچه‌ی این تکه رسیده؟ (شروعش نزدیک شروع درخواست، یا تعدادش دیگر زیاد نمی‌شود)\n        if n and (int(rates[\"time\"][0]) <= start.timestamp() + 7 * 86400 or n == best):\n            break\n        if not n and attempt >= 1:          # دو بار هیچ نیامد → این تکه در متاتریدر دیتا ندارد\n            break\n        best = max(best, n)\n        time.sleep(2)\n    return rates\n\n\ndef fetch(name, tf_name, start, end):\n    \"\"\"کندل‌های کل بازه — تکه‌تکه (هر تکه حداکثر حدود ۴۰ هزار کندل)، چون متاتریدر درخواستِ\n    خیلی بزرگ را گاهی کامل رد می‌کند و هیچ دیتایی نمی‌دهد.\"\"\"\n    tf = getattr(mt5, \"TIMEFRAME_\" + tf_name)\n    per_day = BARS_PER_YEAR[tf_name] / 365.25\n    step = dt.timedelta(days=max(7, int(40000 / per_day)))\n    parts = []\n    b = end\n    while b > start:                                   # از جدید به قدیم\n        a = max(b - step, start)\n        r = _fetch_range(name, tf, a, b)\n        if r is not None and len(r):\n            parts.append(pd.DataFrame(r))\n        elif parts:                                    # قدیمی‌تر از این تکه در متاتریدر دیتا نیست\n            break\n        b = a\n    if not parts:\n        return None\n    df = pd.concat(parts, ignore_index=True).drop_duplicates(\"time\").sort_values(\"time\")\n    df[\"time\"] = pd.to_datetime(df[\"time\"], unit=\"s\")          # ساعت سرور بروکر (مثل خود متاتریدر)\n    return df[[\"time\", \"open\", \"high\", \"low\", \"close\"]].reset_index(drop=True)\n\n\ndef fetch_by_year(name, base, lab, tf_name, start, end, years_dir):\n    \"\"\"کندل‌های بازه، سال‌به‌سال: هر سال تقویمی جدا از متاتریدر گرفته می‌شود و سال‌های تمام‌شده‌ی کامل در\n    years_dir ذخیره می‌شوند (دفعه‌ی بعد از همان‌جا خوانده می‌شوند). آخر کار همه‌ی سال‌ها کنار هم.\"\"\"\n    now = dt.datetime.now(dt.timezone.utc)\n    folder = os.path.join(years_dir, base)\n    os.makedirs(folder, exist_ok=True)\n    parts, report = [], []\n    for y in range(end.year, start.year - 1, -1):     # از جدید به قدیم\n        a = dt.datetime(y, 1, 1, tzinfo=dt.timezone.utc)\n        b = min(dt.datetime(y + 1, 1, 1, tzinfo=dt.timezone.utc), end)\n        if b <= start or a >= end:\n            continue\n        path = os.path.join(folder, f\"{base}-{lab}-{y}.csv\")\n        done = b.year > y and b < now                    # سال تمام‌شده\n        if done and os.path.exists(path):\n            df, src = pd.read_csv(path, parse_dates=[\"time\"]), \"ذخیره\"\n        else:\n            df, src = in_range(fetch(name, tf_name, a, b), a, b), \"\"\n            if done and df is not None and len(df) >= YEAR_COMPLETE * BARS_PER_YEAR[tf_name]:\n                df.to_csv(path, index=False)\n        n = 0 if df is None else len(df)\n        report.append(f\"{y}: {n:,}\" + (f\" ({src})\" if src and n else \"\"))\n        if n:\n            parts.append(df)\n        elif parts:                                    # سال‌های قدیمی‌تر در متاتریدر دیتا ندارند\n            report.append(f\"قبل از {y}: ندارد\")\n            break\n    print(f\"   {base:7s} {tf_name:4s} سال‌به‌سال → \" + \" | \".join(reversed(report)), flush=True)\n    if not parts:\n        return None\n    df = pd.concat(parts, ignore_index=True).drop_duplicates(\"time\").sort_values(\"time\")\n    return in_range(df.reset_index(drop=True), start, end)\n\n\ndef in_range(df, a, b):\n    \"\"\"فقط کندل‌های داخل بازه‌ی [a, b) — متاتریدر گاهی برای بازه‌ی بی‌دیتا یک کندل بی‌ربط برمی‌گرداند.\"\"\"\n    if df is None or df.empty:\n        return df\n    a_ = pd.Timestamp(a.replace(tzinfo=None))\n    b_ = pd.Timestamp(b.replace(tzinfo=None))\n    return df[(df[\"time\"] >= a_) & (df[\"time\"] < b_)].reset_index(drop=True)\n\n\ndef drop_open_bar(df, tf_name, last_tick_time):\n    \"\"\"کندلی که تا لحظه‌ی آخرین تیک هنوز تمام نشده، حذف می‌شود (فقط کندل‌های کامل).\"\"\"\n    if df is None or df.empty or last_tick_time is None:\n        return df\n    end_of_bar = df[\"time\"] + pd.Timedelta(seconds=TF_SECONDS[tf_name])\n    return df[end_of_bar <= last_tick_time].reset_index(drop=True)\n\n\ndef to_csv_text(df, digits):\n    \"\"\"فرمت متاتریدر بدون سطر عنوان: date,time,open,high,low,close\"\"\"\n    out = pd.DataFrame({\n        \"d\": df[\"time\"].dt.strftime(\"%Y.%m.%d\"),\n        \"t\": df[\"time\"].dt.strftime(\"%H:%M\"),\n    })\n    for c in (\"open\", \"high\", \"low\", \"close\"):\n        out[c] = df[c].round(digits)\n    return out.to_csv(header=False, index=False)\n\n\nclass _Tee:\n    \"\"\"هر چه چاپ می‌شود هم در پنجره می‌آید و هم در فایل گزارش ذخیره می‌شود\n    (اگر پنجره بسته شد، نتیجه از دست نرود).\"\"\"\n    def __init__(self, *streams):\n        self.streams = streams\n\n    def write(self, s):\n        for st in self.streams:\n            try:\n                st.write(s)\n                st.flush()\n            except Exception:\n                pass\n\n    def flush(self):\n        for st in self.streams:\n            try:\n                st.flush()\n            except Exception:\n                pass\n\n\nLOG_NAME = \"گزارش_دانلود.txt\"\n\n\ndef main():\n    os.makedirs(OUT_DIR, exist_ok=True)\n    log_path = os.path.join(OUT_DIR, LOG_NAME)\n    try:\n        sys.stdout = _Tee(sys.__stdout__, open(log_path, \"w\", encoding=\"utf-8\"))\n    except Exception:\n        log_path = None\n\n    print(\"=\" * 64)\n    print(\" دانلود تاریخچه‌ی کندل از متاتریدر ۵ (سال‌به‌سال)\")\n    print(\"=\" * 64)\n    if log_path:\n        print(f\"(همه‌ی این پیام‌ها در این فایل هم ذخیره می‌شود: {log_path})\")\n\n    problems = check_settings()\n    if problems:\n        print(\"⛔ تنظیمات بالای فایل مشکل دارد:\")\n        for p in problems:\n            print(\"   - \" + p)\n        return 1\n\n    start, end = date_range()\n    years = (min(end, dt.datetime.now(dt.timezone.utc)) - start).days / 365.25\n    print(f\"بازه: از {start.date()} تا {'امروز' if not END_DATE.strip() else END_DATE}  (حدود {years:.1f} سال)\")\n    if WARMUP_DAYS:\n        print(f\"   (تایم‌های ۱۵دقیقه و بالاتر از {WARMUP_DAYS} روز قبلش برای گرم‌کردن روند و زون‌ها)\")\n    print(f\"تایم‌فریم‌ها: {', '.join(f'{n} (فایل -{lab}.csv)' for lab, n in TIMEFRAMES)}\")\n    print(f\"نمادها: {', '.join(SYMBOLS)}\")\n    print(f\"پوشه‌ی خروجی: {OUT_DIR}\\n\")\n\n    ti = connect()\n    if ti is None:\n        return 1\n\n    # سقف کندل متاتریدر: اگر کمتر از نیاز باشد، دیتای تایم‌فریم‌های ریز ناقص می‌آید\n    maxbars = getattr(ti, \"maxbars\", 0) or 0\n    need = max(int(BARS_PER_YEAR[n] * years) for _, n in TIMEFRAMES)\n    if maxbars and maxbars < need:\n        print(f\"⚠️ «Max bars in chart» متاتریدر {maxbars:,} است ولی برای این بازه تا حدود {need:,} کندل لازم است.\")\n        print(\"   در متاتریدر: Tools → Options → Charts → Max bars in chart = Unlimited\")\n        print(\"   بعد متاتریدر را ببند و دوباره باز کن و این فایل را دوباره اجرا کن.\")\n        print(\"   (ادامه می‌دهم، ولی دیتای تایم‌فریم‌های ریز ممکن است از شروع بازه کوتاه‌تر باشد.)\\n\")\n\n    os.makedirs(OUT_DIR, exist_ok=True)\n    years_dir = os.path.join(OUT_DIR, YEARS_DIR_NAME)\n    summary = []\n    for base in SYMBOLS:\n        name = resolve(base)\n        if name is None:\n            print(f\"❌ {base}: نزد بروکر پیدا نشد — رد شد.\")\n            summary.append((base, \"پیدا نشد\", \"\"))\n            continue\n        si = mt5.symbol_info(name)\n        digits = int(getattr(si, \"digits\", 5) or 5)\n        tick = mt5.symbol_info_tick(name)\n        last_tick = pd.to_datetime(tick.time, unit=\"s\") if (tick is not None and tick.time) else None\n\n        files = {}\n        notes = []\n        for lab, tf_name in TIMEFRAMES:\n            tf_start = start if tf_name in LTF_NAMES else start - dt.timedelta(days=WARMUP_DAYS)\n            df = drop_open_bar(fetch_by_year(name, base, lab, tf_name, tf_start, end, years_dir), tf_name, last_tick)\n            if df is None or df.empty:\n                notes.append(f\"{tf_name}: دیتا نیامد\")\n                print(f\"   ⚠️ {base} {tf_name}: دیتا نیامد\")\n                continue\n            files[f\"{base}-{lab}.csv\"] = to_csv_text(df, digits)\n            first, last = df[\"time\"].iloc[0], df[\"time\"].iloc[-1]\n            short = first > pd.Timestamp(tf_start.replace(tzinfo=None)) + pd.Timedelta(days=30)\n            flag = \"  ⚠️ از شروع بازه کوتاه‌تر\" if short else \"\"\n            if short:\n                notes.append(f\"{tf_name} از {first.date()}\")\n            print(f\"   {base:7s} {tf_name:4s} → {len(df):>9,} کندل | {first:%Y-%m-%d} تا {last:%Y-%m-%d %H:%M}{flag}\")\n\n        if not files:\n            print(f\"❌ {base}: هیچ دیتایی نیامد — ZIP ساخته نشد.\\n\")\n            summary.append((base, \"ناقص\", \"، \".join(notes)))\n            continue\n\n        zpath = os.path.join(OUT_DIR, f\"{base}.zip\")\n        tmp = zpath + \".tmp\"\n        with zipfile.ZipFile(tmp, \"w\", compression=zipfile.ZIP_DEFLATED) as z:\n            for fname, text in files.items():\n                z.writestr(fname, text)\n        os.replace(tmp, zpath)\n        print(f\"✅ {base}.zip ساخته شد ({len(files)} تایم‌فریم)\\n\")\n        summary.append((base, \"✅\", \"، \".join(notes)))\n\n    mt5.shutdown()\n\n    print(\"=\" * 64)\n    print(\" نتیجه\")\n    print(\"=\" * 64)\n    for base, st, note in summary:\n        print(f\" {st:10s} {base:7s} {note}\")\n    print(\"\\nℹ️ اگر سال‌های قدیمی‌ی ۱دقیقه نیامد: متاتریدر → Tools → Options → Charts → Max bars in chart = Unlimited،\")\n    print(\"   بعد متاتریدر را کامل ببند و دوباره باز کن و این فایل را دوباره اجرا کن (سال‌های ذخیره‌شده دوباره گرفته نمی‌شوند).\")\n    print(\"   بک‌تستر بازه را خودش با دیتای ۱دقیقه هماهنگ می‌کند.\")\n    print(f\"\\nفایل‌ها در: {OUT_DIR}\")\n    if os.path.normcase(os.path.abspath(OUT_DIR)) != os.path.normcase(\n            os.path.join(os.path.expanduser(\"~\"), \"Desktop\", \"0\")):\n        print(\"برای بک‌تست: فایل‌های ZIP این پوشه را در پوشه‌ی دیتای بک‌تستر کپی کن.\")\n    if log_path:\n        print(f\"گزارش کامل این دانلود: {log_path}\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    try:\n        code = main()\n    except KeyboardInterrupt:\n        print(\"\\n⏹️ متوقف شد.\")\n        code = 1\n    except Exception as e:\n        print(f\"\\n❌ خطای غیرمنتظره: {e}\")\n        code = 1\n    if os.environ.get(\"EXPORT_FROM_BAT\") != \"1\":\n        try:\n            input(\"\\nبرای بستن پنجره Enter بزن...\")\n        except Exception:\n            pass\n    sys.exit(code)\n"}, {"file": "spread_meter.py", "name_fa": "اسپردسنج", "name_en": "Spread meter", "desc_fa": "اسپرد واقعی بروکر را از تیک‌های متاتریدر اندازه می‌گیرد و میانه و میانگین را در یک فایل می‌نویسد تا بکتستر از آن استفاده کند.", "desc_en": "Measures the broker's real spread from MetaTrader ticks and writes the median and mean to a file the backtester reads.", "test_fa": "آزموده با تیک‌های ساختگی: میانه‌ی ۳٫۰۰ پیپ، همان عددی که انتظار داشتیم.", "test_en": "Tested with synthetic ticks: a median of 3.00 pips, exactly as expected.", "lines": 174, "code": "# -*- coding: utf-8 -*-\n\"\"\"اندازه‌گیری اسپرد واقعی هر نماد از متاتریدر ۵\n\nبخشی از سیستم معامله‌گری خودکار حسین شیردل (ساخته‌شده با هوش مصنوعی).\n\nاجرا:  python spread_meter.py      (متاتریدر ۵ باز و لاگین باشد)\nپیش‌نیاز: pip install MetaTrader5 numpy\n\nاسپرد (Ask − Bid) همه‌ی تیک‌های چند روز اخیر خوانده می‌شود و میانگین و «میانه»اش در spreads.csv ذخیره\nمی‌شود. بک‌تست باید از میانه استفاده کند: پرش‌های لحظه‌ای اسپرد (رول‌اوور نیمه‌شب، باز شدن بازار)\nمیانگینِ نمادهای کم‌معامله را چند برابر اسپرد معمول نشان می‌دهد. روزبه‌روز خوانده می‌شود تا حافظه پر نشود.\nاگر تیک نیامد، از ستون اسپرد کندل‌های ۱۵دقیقه و در آخر از اسپرد همین لحظه استفاده می‌شود.\n\"\"\"\n\nimport os\nimport sys\nimport datetime as dt\n\n# ================== تنظیمات ==================\nSYMBOLS = [\"XAUUSD\", \"EURUSD\", \"GBPJPY\"]\nSPREAD_DAYS = 5                # چند روز اخیر\nOUT_DIR = os.path.join(os.path.expanduser(\"~\"), \"Desktop\", \"history_data\")\nTERMINAL_PATH = \"\"             # مسیر terminal64.exe — فقط اگر چند متاتریدر نصب است\nSPREADS_NAME = \"spreads.csv\"\n# =============================================\n\ndef _fail(msg):\n    \"\"\"پیام خطا + (اگر مستقیم دابل‌کلیک شده) صبر تا کاربر پیام را بخواند.\"\"\"\n    print(msg)\n    if os.environ.get(\"EXPORT_FROM_BAT\") != \"1\":\n        try:\n            input(\"\\nبرای بستن پنجره Enter بزن...\")\n        except Exception:\n            pass\n    sys.exit(1)\n\n\ntry:\n    import MetaTrader5 as mt5\nexcept ImportError:\n    _fail(\"پکیج MetaTrader5 نصب نیست. در CMD بزن:  pip install MetaTrader5\")\n\n\ndef connect():\n    ok = mt5.initialize(path=TERMINAL_PATH) if TERMINAL_PATH.strip() else mt5.initialize()\n    if not ok:\n        print(f\"⛔ اتصال به متاتریدر برقرار نشد: {mt5.last_error()}\")\n        print(\"   متاتریدر ۵ باید باز و لاگین باشد.\")\n        return None\n    acc = mt5.account_info()\n    ti = mt5.terminal_info()\n    if acc is not None:\n        print(f\"✅ وصل شد | حساب {acc.login} ({acc.server})\")\n    return ti\n\n\ndef resolve(base):\n    \"\"\"اسم نماد نزد بروکر (با پسوند احتمالی).\"\"\"\n    if mt5.symbol_info(base) is not None:\n        mt5.symbol_select(base, True)\n        return base\n    cands = mt5.symbols_get(f\"*{base}*\")\n    if cands:\n        name = sorted((c.name for c in cands), key=len)[0]\n        mt5.symbol_select(name, True)\n        return name\n    return None\n\n\ndef measure_spread(name, si):\n    \"\"\"اسپرد واقعی نماد (برحسب قیمت): میانگین Ask − Bid تیک‌های SPREAD_DAYS روز اخیر.\n    خروجی: (میانگین, میانه, تعداد تیک, منبع). روزبه‌روز خوانده می‌شود تا حافظه پر نشود.\"\"\"\n    point = float(getattr(si, \"point\", 0.0) or 0.0)\n    now = dt.datetime.now(dt.timezone.utc)\n    total, count, samples = 0.0, 0, []\n    for d in range(SPREAD_DAYS + 3, 0, -1):          # چند روز بیشتر، چون آخر هفته تیک ندارد\n        a = now - dt.timedelta(days=d)\n        ticks = mt5.copy_ticks_range(name, a, a + dt.timedelta(days=1), mt5.COPY_TICKS_INFO)\n        if ticks is None or len(ticks) == 0:\n            continue\n        sp = ticks[\"ask\"] - ticks[\"bid\"]\n        sp = sp[(ticks[\"bid\"] > 0) & (sp > 0)]\n        if len(sp) == 0:\n            continue\n        total += float(sp.sum())\n        count += int(len(sp))\n        samples.append(sp[::max(1, len(sp) // 20000)])\n    if count:\n        import numpy as np\n        med = float(np.median(np.concatenate(samples)))\n        return total / count, med, count, \"تیک\"\n    # تیک نیامد → ستون اسپرد کندل‌های ۱۵دقیقه (کمینه‌ی اسپرد هر کندل؛ کمی خوش‌بینانه)\n    rates = mt5.copy_rates_from_pos(name, mt5.TIMEFRAME_M15, 0, 2000)\n    if rates is not None and len(rates) and point > 0:\n        sp = rates[\"spread\"].astype(float) * point\n        sp = sp[sp > 0]\n        if len(sp):\n            return float(sp.mean()), float(sorted(sp)[len(sp) // 2]), 0, \"کندل\"\n    cur = float(getattr(si, \"spread\", 0) or 0) * point\n    return cur, cur, 0, \"لحظه‌ای\"\n\n\ndef write_spreads(rows, dirs):\n    \"\"\"rows: [(نماد, میانگین, میانه, تعداد تیک, منبع, digits)] → spreads.csv در هر پوشه‌ی dirs\"\"\"\n    lines = [\"symbol,spread,median,ticks,source\"]\n    for base, mean, med, n, src, digits in rows:\n        nd = max(int(digits) + 2, 6)\n        lines.append(f\"{base},{mean:.{nd}f},{med:.{nd}f},{n},{src}\")\n    text = \"\\n\".join(lines) + \"\\n\"\n    out = []\n    for d in dirs:\n        if not d or not os.path.isdir(d):\n            continue\n        path = os.path.join(d, SPREADS_NAME)\n        with open(path, \"w\", encoding=\"utf-8\") as f:\n            f.write(text)\n        out.append(path)\n    return out\n\n\ndef _pip(base):\n    if base.endswith(\"JPY\"):\n        return 0.01\n    if base.startswith(\"XAU\"):\n        return 0.1\n    if base.startswith(\"XAG\"):\n        return 0.01\n    return 0.0001\n\n\ndef main():\n    \"\"\"اسپرد همه‌ی نمادها → spreads.csv\"\"\"\n    print(\"=\" * 64)\n    print(f\" اندازه‌گیری اسپرد واقعی متاتریدر (میانگین تیک‌های {SPREAD_DAYS} روز اخیر)\")\n    print(\"=\" * 64)\n    if connect() is None:\n        return 1\n    rows = []\n    for base in SYMBOLS:\n        name = resolve(base)\n        if name is None:\n            print(f\"❌ {base}: نزد بروکر پیدا نشد\")\n            continue\n        si = mt5.symbol_info(name)\n        mean, med, n, src = measure_spread(name, si)\n        rows.append((base, mean, med, n, src, int(getattr(si, \"digits\", 5) or 5)))\n        print(f\"   {base:7s} اسپرد میانگین {mean / _pip(base):6.2f} پیپ | میانه {med / _pip(base):6.2f} پیپ\"\n              f\" | {n:,} تیک ({src})\")\n    mt5.shutdown()\n    if not rows:\n        return 1\n    os.makedirs(OUT_DIR, exist_ok=True)\n    paths = write_spreads(rows, [OUT_DIR])\n    print(\"\\nذخیره شد:\")\n    for p_ in paths:\n        print(\"   \" + p_)\n    return 0\n\n\nif __name__ == \"__main__\":\n    try:\n        code = main()\n    except KeyboardInterrupt:\n        code = 1\n    except Exception as e:\n        print(f\"\\n❌ خطای غیرمنتظره: {e}\")\n        code = 1\n    if os.environ.get(\"EXPORT_FROM_BAT\") != \"1\":\n        try:\n            input(\"\\nبرای بستن پنجره Enter بزن...\")\n        except Exception:\n            pass\n    sys.exit(code)\n"}]</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  var root = document.documentElement;
+  var lang = function () { return root.getAttribute("data-lang") === "en" ? "en" : "fa"; };
+  var faDigits = function (s) { return String(s).replace(/\d/g, function (d) { return "۰۱۲۳۴۵۶۷۸۹"[d]; }); };
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var css = function (name) { return getComputedStyle(root).getPropertyValue(name).trim(); };
+  var listeners = [];
+  var onLang = function (fn) { listeners.push(fn); };
+
+  /* ---------------- language ---------------- */
+  function setLang(l) {
+    root.setAttribute("data-lang", l); root.lang = l; root.dir = l === "fa" ? "rtl" : "ltr";
+    try { localStorage.setItem("hs-lang", l); } catch (e) {}
+    listeners.forEach(function (fn) { try { fn(l); } catch (e) { console.error(e); } });
+  }
+  document.getElementById("langBtn").addEventListener("click", function () { setLang(lang() === "fa" ? "en" : "fa"); });
+  window.addEventListener("hashchange", function () {
+    var h = location.hash.replace("#", "");
+    if ((h === "en" || h === "fa") && h !== lang()) setLang(h);
+  });
+
+  /* ---------------- copy helper ---------------- */
+  function copyText(text, el, done) {
+    var show = function () { if (done) { done.hidden = false; setTimeout(function () { done.hidden = true; }, 1800); } };
+    var fallback = function () {
+      try {
+        var r = document.createRange(); r.selectNodeContents(el);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        document.execCommand && document.execCommand("copy");
+      } catch (e) {}
+      show();
+    };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(show, fallback);
+      else fallback();
+    } catch (e) { fallback(); }
+  }
+  document.getElementById("mailCopy").addEventListener("click", function () {
+    var a = document.getElementById("mailAddr");
+    copyText(a.textContent.trim(), a, document.getElementById("mailDone"));
+  });
+
+  /* ---------------- journey candles (illustrative) ---------------- */
+  (function journey() {
+    var cv = document.getElementById("jc"), ctx = cv.getContext("2d");
+    var steps = Array.prototype.slice.call(document.querySelectorAll(".step"));
+    var M = steps.length, N = 124;
+    var kinds = steps.map(function (s) { return s.classList.contains("down") ? -1 : 1; });
+    var mIdx = steps.map(function (_, k) { return Math.round(10 + k * (N - 16) / (M - 1)); });
+    var seed = 20240320;
+    var rnd = function () { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+    var gauss = function () { return (rnd() + rnd() + rnd() - 1.5) * 1.15; };
+    var C = [], price = 100, mset = {};
+    mIdx.forEach(function (i, k) { mset[i] = k; });
+    for (var i = 0; i < N; i++) {
+      var o = price, c, k = mset[i];
+      if (k !== undefined) c = o + (kinds[k] < 0 ? -7.5 : 5.2);
+      else if (i > 0 && mset[i - 1] !== undefined && kinds[mset[i - 1]] < 0) c = o - 1.6 + gauss() * 0.6;
+      else c = o + 0.62 + gauss() * 1.35;
+      var h = Math.max(o, c) + Math.abs(gauss()) * 0.9 + 0.25, l = Math.min(o, c) - Math.abs(gauss()) * 0.9 - 0.25;
+      C.push({ o: o, h: h, l: l, c: c, m: k });
+      price = c;
+    }
+    var lo = Infinity, hi = -Infinity;
+    C.forEach(function (d) { lo = Math.min(lo, d.l); hi = Math.max(hi, d.h); });
+    var pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+    var ema = [], a = 2 / (12 + 1);
+    C.forEach(function (d, i) { ema.push(i ? ema[i - 1] + a * (d.c - ema[i - 1]) : d.c); });
+    var shown = reduce ? N : mIdx[0] + 1, target = shown, active = reduce ? M - 1 : 0, W = 0, H = 0, dpr = 1;
+
+    function size() {
+      var r = cv.getBoundingClientRect(); dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = Math.max(200, r.width); H = Math.max(150, r.height);
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      draw();
+    }
+    function title(k) {
+      var s = steps[k]; if (!s) return "";
+      var el = s.querySelector("h3 ." + lang()); return el ? el.textContent : "";
+    }
+    function draw() {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      var L = 10, R = 12, T = 30, B = 14, pw = W - L - R, ph = H - T - B;
+      var x = function (i) { return L + (i + 0.5) * pw / N; };
+      var y = function (v) { return T + (hi - v) / (hi - lo) * ph; };
+      ctx.strokeStyle = css("--rule"); ctx.lineWidth = 1; ctx.globalAlpha = .6;
+      for (var g = 1; g < 5; g++) { var gy = Math.round(T + g * ph / 5) + .5; ctx.beginPath(); ctx.moveTo(L, gy); ctx.lineTo(W - R, gy); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+      var n = Math.max(1, Math.min(N, Math.floor(shown))), bw = Math.max(2, pw / N * 0.62);
+      var up = css("--up"), dn = css("--down"), gold = css("--gold");
+      for (var i = 0; i < n; i++) {
+        var d = C[i], col = d.c >= d.o ? up : dn, cx = Math.round(x(i)) + .5;
+        ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(cx, y(d.h)); ctx.lineTo(cx, y(d.l)); ctx.stroke();
+        var top = y(Math.max(d.o, d.c)), bh = Math.max(1.5, Math.abs(y(d.o) - y(d.c)));
+        ctx.fillRect(cx - bw / 2, top, bw, bh);
+      }
+      ctx.strokeStyle = gold; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.beginPath();
+      for (i = 0; i < n; i++) { var py = y(ema[i]); i ? ctx.lineTo(x(i), py) : ctx.moveTo(x(i), py); }
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(x(n - 1), y(ema[n - 1]), 4.5, 0, 6.3); ctx.fillStyle = gold; ctx.fill();
+      for (var k = 0; k < M; k++) {
+        if (mIdx[k] >= n) break;
+        var d2 = C[mIdx[k]], mx = x(mIdx[k]), my = kinds[k] < 0 ? y(d2.l) + 9 : y(d2.h) - 9;
+        ctx.beginPath(); ctx.arc(mx, my, k === active ? 5 : 3.2, 0, 6.3);
+        ctx.fillStyle = k === active ? gold : css("--fg-2"); ctx.fill();
+      }
+      if (mIdx[active] < n) {
+        var t = (lang() === "fa" ? faDigits(active + 1) : String(active + 1)) + " · " + title(active);
+        ctx.font = (lang() === "fa" ? "700 13px Vazirmatn, Tahoma, sans-serif" : "600 13px 'IBM Plex Sans', sans-serif");
+        ctx.direction = lang() === "fa" ? "rtl" : "ltr";
+        var tw = ctx.measureText(t).width + 16, ax = x(mIdx[active]);
+        var bx = Math.min(Math.max(L, ax - tw / 2), W - R - tw), by = 4;
+        ctx.fillStyle = css("--ink"); ctx.strokeStyle = gold; ctx.lineWidth = 1;
+        ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, by, tw, 22, 6); else ctx.rect(bx, by, tw, 22); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = css("--fg"); ctx.textBaseline = "middle";
+        ctx.textAlign = "center"; ctx.fillText(t, bx + tw / 2, by + 11.5);
+        ctx.strokeStyle = gold; ctx.globalAlpha = .5; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(ax, by + 22); ctx.lineTo(ax, kinds[active] < 0 ? y(C[mIdx[active]].l) + 4 : y(C[mIdx[active]].h) - 14); ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+    }
+    function update() {
+      var narrow = window.matchMedia && window.matchMedia("(max-width: 860px)").matches;
+      var probe = window.innerHeight * (narrow ? 0.74 : 0.55), k = -1, frac = 0;
+      for (var j = 0; j < M; j++) {
+        var r = steps[j].getBoundingClientRect(), c = r.top + r.height / 2;
+        if (c <= probe) { k = j; var nx = steps[j + 1]; if (nx) { var r2 = nx.getBoundingClientRect(), c2 = r2.top + r2.height / 2; frac = Math.min(1, Math.max(0, (probe - c) / Math.max(1, c2 - c))); } else frac = 1; }
+      }
+      if (k < 0) { target = mIdx[0] + 1; active = 0; }
+      else if (k === M - 1) { target = N; active = M - 1; }
+      else { target = mIdx[k] + 1 + frac * (mIdx[k + 1] - mIdx[k]); active = frac > 0.92 ? k + 1 : k; }
+      steps.forEach(function (s, j) { s.classList.toggle("on", j === active); });
+    }
+    var raf = 0;
+    function tick() {
+      raf = 0;
+      var diff = target - shown;
+      if (Math.abs(diff) > 0.05) { shown += diff * 0.18; raf = requestAnimationFrame(tick); } else shown = target;
+      draw();
+    }
+    function onScroll() { if (reduce) return; update(); if (!raf) raf = requestAnimationFrame(tick); }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", function () { size(); onScroll(); });
+    onLang(function () { draw(); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+    if (reduce) steps.forEach(function (s) { s.classList.remove("on"); });
+    size(); if (!reduce) { update(); shown = target; draw(); }
+  })();
+
+  /* ---------------- live vs backtest chart (real data) ---------------- */
+  (function compare() {
+    var S = JSON.parse(document.getElementById("series").textContent);
+    var box = document.getElementById("cmp"), legend = document.getElementById("cmpLegend");
+    var defs = [
+      { key: "old", col: "--s2", dash: "6 5", fa: "بکتست با روش قدیم", en: "Backtest, old method" },
+      { key: "real", col: "--s3", dash: "", fa: "بکتست واقع‌بینانه", en: "Realistic backtest" },
+      { key: "live", col: "--s1", dash: "", fa: "حساب زنده", en: "Live account", w: 2.5 }
+    ];
+    var parse = function (s) { return new Date(s.replace(" ", "T") + ":00Z").getTime(); };
+    var t0 = parse("2026-08-17 00:00"), t1 = parse("2026-09-29 00:00");
+    var series = defs.map(function (d) {
+      var pts = [[t0, 0]]; S[d.key].forEach(function (p) { pts.push([parse(p[0]), p[1]]); });
+      return { d: d, pts: pts };
+    });
+    var NS = "http://www.w3.org/2000/svg";
+    var el = function (n, a) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); return e; };
+    var fmtPct = function (v) {
+      var s = (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(1) + "%";
+      return lang() === "fa" ? "\u2066" + faDigits(s.replace(".", "٫").replace("%", "٪")) + "\u2069" : s;
+    };
+    var fmtDate = function (t) {
+      try { return new Intl.DateTimeFormat(lang() === "fa" ? "fa-IR" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(t)); }
+      catch (e) { return new Date(t).toISOString().slice(5, 10); }
+    };
+    var valAt = function (pts, t) { var v = 0; for (var i = 0; i < pts.length && pts[i][0] <= t; i++) v = pts[i][1]; return v; };
+    var tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true;
+
+    function render() {
+      box.innerHTML = ""; legend.innerHTML = "";
+      defs.forEach(function (d) {
+        var s = document.createElement("span");
+        var sv = el("svg", { width: 22, height: 8, "aria-hidden": "true" });
+        sv.appendChild(el("line", { x1: 1, y1: 4, x2: 21, y2: 4, stroke: css(d.col), "stroke-width": d.w || 2, "stroke-dasharray": d.dash, "stroke-linecap": "round" }));
+        s.appendChild(sv); s.appendChild(document.createTextNode(d[lang()])); legend.appendChild(s);
+      });
+      var Wd = Math.max(300, box.clientWidth), narrow = Wd < 560;
+      var H = narrow ? 300 : 360, L = 44, R = narrow ? 62 : 150, T = 14, B = 30;
+      var y0 = -5, y1 = 6, pw = Wd - L - R, ph = H - T - B;
+      var X = function (t) { return L + (t - t0) / (t1 - t0) * pw; };
+      var Y = function (v) { return T + (y1 - v) / (y1 - y0) * ph; };
+      var svg = el("svg", { viewBox: "0 0 " + Wd + " " + H, width: Wd, height: H, role: "img", "aria-label": lang() === "fa" ? "مقایسه‌ی بازده بکتست و حساب زنده" : "Backtest versus live return" });
+      for (var g = y0; g <= y1; g += (narrow ? 2 : 1)) {
+        if (g % (narrow ? 2 : 1)) continue;
+        svg.appendChild(el("line", { x1: L, x2: L + pw, y1: Y(g), y2: Y(g), stroke: css(g === 0 ? "--muted" : "--rule"), "stroke-width": 1, "stroke-opacity": g === 0 ? .7 : .8 }));
+        var tx = el("text", { x: L - 8, y: Y(g) + 4, "text-anchor": "end" }); tx.textContent = fmtPct(g); svg.appendChild(tx);
+      }
+      var day = 86400000;
+      for (var t = parse("2026-08-17 00:00"); t <= t1; t += day * (narrow ? 14 : 7)) {
+        var xx = X(t);
+        svg.appendChild(el("line", { x1: xx, x2: xx, y1: T + ph, y2: T + ph + 5, stroke: css("--rule") }));
+        var lb = el("text", { x: xx, y: T + ph + 19, "text-anchor": "middle" }); lb.textContent = fmtDate(t); svg.appendChild(lb);
+      }
+      var ends = [];
+      series.forEach(function (s) {
+        var d = "M" + X(s.pts[0][0]).toFixed(1) + " " + Y(0).toFixed(1);
+        for (var i = 1; i < s.pts.length; i++) {
+          d += " H" + X(s.pts[i][0]).toFixed(1) + " V" + Y(s.pts[i][1]).toFixed(1);
+        }
+        var last = s.pts[s.pts.length - 1];
+        d += " H" + X(t1).toFixed(1);
+        svg.appendChild(el("path", { d: d, fill: "none", stroke: css("--ink-2"), "stroke-width": (s.d.w || 2) + 3, "stroke-linejoin": "round" }));
+        svg.appendChild(el("path", { d: d, fill: "none", stroke: css(s.d.col), "stroke-width": s.d.w || 2, "stroke-dasharray": s.d.dash, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+        svg.appendChild(el("circle", { cx: X(t1), cy: Y(last[1]), r: 4, fill: css(s.d.col), stroke: css("--ink-2"), "stroke-width": 2 }));
+        ends.push({ y: Y(last[1]), v: last[1], s: s });
+      });
+      ends.sort(function (a, b) { return a.y - b.y; });
+      for (var e = 1; e < ends.length; e++) if (ends[e].y - ends[e - 1].y < 30) ends[e].y = ends[e - 1].y + 30;
+      ends.forEach(function (en) {
+        var tv = el("text", { x: X(t1) + 10, y: en.y + 4, "class": "lbl", fill: css("--fg") }); tv.textContent = fmtPct(en.v); svg.appendChild(tv);
+        if (!narrow) { var tn = el("text", { x: X(t1) + 10, y: en.y + 19, fill: css("--fg-2") }); tn.textContent = en.s.d[lang()]; svg.appendChild(tn); }
+      });
+      var cross = el("line", { y1: T, y2: T + ph, stroke: css("--fg-2"), "stroke-width": 1, "stroke-dasharray": "2 3", visibility: "hidden" });
+      svg.appendChild(cross);
+      var hit = el("rect", { x: L, y: T, width: pw, height: ph, fill: "transparent", tabindex: 0 });
+      svg.appendChild(hit);
+      box.appendChild(svg); box.appendChild(tip);
+      function show(px) {
+        var t = t0 + Math.min(1, Math.max(0, (px - L) / pw)) * (t1 - t0);
+        t = Math.round(t / 3600000) * 3600000;
+        cross.setAttribute("x1", X(t)); cross.setAttribute("x2", X(t)); cross.setAttribute("visibility", "visible");
+        tip.innerHTML = "";
+        var head = document.createElement("div"); head.className = "t"; head.textContent = fmtDate(t); tip.appendChild(head);
+        series.slice().reverse().forEach(function (s) {
+          var row = document.createElement("div"); row.className = "row";
+          var k = document.createElement("i"); k.style.background = css(s.d.col);
+          var v = document.createElement("b"); v.textContent = fmtPct(valAt(s.pts, t));
+          var n = document.createElement("span"); n.textContent = s.d[lang()];
+          row.appendChild(k); row.appendChild(v); row.appendChild(n); tip.appendChild(row);
+        });
+        tip.hidden = false;
+        var scale = box.clientWidth / Wd, tx = X(t) * scale, tw = tip.offsetWidth;
+        tip.style.left = Math.max(0, Math.min(box.clientWidth - tw, tx + 12 > box.clientWidth - tw ? tx - tw - 12 : tx + 12)) + "px";
+        tip.style.top = "10px";
+      }
+      function hide() { cross.setAttribute("visibility", "hidden"); tip.hidden = true; }
+      hit.addEventListener("pointermove", function (ev) { var r = svg.getBoundingClientRect(); show((ev.clientX - r.left) * Wd / r.width); });
+      hit.addEventListener("pointerleave", hide);
+      hit.addEventListener("focus", function () { show(L + pw); });
+      hit.addEventListener("blur", hide);
+      hit.addEventListener("keydown", function (ev) {
+        var cur = parseFloat(cross.getAttribute("x1")) || L + pw, step = pw / 42;
+        if (ev.key === "ArrowLeft") { show(cur - step); ev.preventDefault(); }
+        if (ev.key === "ArrowRight") { show(cur + step); ev.preventDefault(); }
+      });
+    }
+    var rt = 0;
+    window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(render, 120); });
+    onLang(render);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(render);
+    render();
+  })();
+
+  /* ---------------- 14 issues ---------------- */
+  (function bugs() {
+    var A = { bt: ["بکتستر", "Backtester"], lv: ["ربات زنده", "Live robot"], sec: ["امنیت", "Security"], st: ["استراتژی", "Strategy"] };
+    var SV = { c: ["خیلی بالا", "Critical", 1], h: ["بالا", "High", 1], m: ["متوسط", "Medium", 0], l: ["کم", "Low", 0] };
+    var ST = { ok: ["اصلاح شد", "Fixed"], rw: ["در بازنویسی ربات", "In the robot rewrite"], nd: ["در طراحی جدید", "In the new design"] };
+    var rows = [
+      ["bt", "c", "فرض خوش‌بینانه در کندل ورود: سودی که قبل از ورود رخ داده بود ثبت می‌شد", "Optimistic entry candle: profit that happened before the entry was credited", "ok"],
+      ["bt", "h", "داده‌ی ریزتر در حالت سیو سود اصلاً استفاده نمی‌شد", "Finer data was ignored when partial closes were on", "ok"],
+      ["bt", "h", "زونی که در یک کندل لمس می‌شد، در همان کندل سفارش می‌گرفت و پر می‌شد", "A zone touched in a candle got its order placed and filled in that same candle", "ok"],
+      ["bt", "m", "فقط قیمت فروش (Bid) و هزینه‌های حدسی؛ حالا مدل خرید و فروش با اسپرد واقعی", "Bid-only prices and guessed costs; now a bid/ask model with real spread", "ok"],
+      ["lv", "h", "سیو سود روی یک پوزیشن ۹ بار اجرا شد، چون متاتریدر کد صفر برمی‌گرداند", "Partial close ran 9 times on one position because MetaTrader returned code 0", "rw"],
+      ["lv", "h", "شناسه‌ی زون با جلو رفتن پنجره عوض می‌شد؛ خطر سفارش تکراری", "Zone IDs shifted as the window moved, risking duplicate orders", "rw"],
+      ["lv", "h", "دو خاموشی وسط هفته؛ نگهبان قدیمی ۴۶۴ بار خطا گرفت", "Two mid-week outages; the old watchdog failed 464 times", "ok"],
+      ["lv", "m", "دست زدن به سفارش طلا در ساعتی که بازارش بسته است", "Touching gold orders while the gold market was closed", "rw"],
+      ["lv", "m", "لغو و ثبت دوباره‌ی همه‌ی سفارش‌ها هر ۴ ساعت (۱٬۲۸۵ سفارش در ۶ هفته)", "Cancelling and re-placing every order every 4 hours (1,285 orders in 6 weeks)", "rw"],
+      ["lv", "l", "فیلتر سفارش‌ها یک کندل عقب‌تر از بکتست بود", "Order filters lagged the backtest by one candle", "ok"],
+      ["lv", "l", "لاگ گمراه‌کننده: سفارش موفق «رد شد» ثبت می‌شد و ساعت سرور قاطی بود", "Misleading logs: successful orders logged as rejected, server time mixed up", "rw"],
+      ["sec", "h", "توکن پیام‌رسان داخل کد بود؛ حالا از فایل جدا خوانده می‌شود", "The messenger token sat in the code; it is now read from a separate file", "ok"],
+      ["st", "h", "استاپ‌های خیلی کوچک نسبت به اسپرد؛ بخش بزرگی از ریسک فقط هزینه بود", "Stops too small for the spread; much of the risk was pure cost", "nd"],
+      ["st", "h", "کندل ۴ساعته برای این اندازه‌ی زون خیلی درشت بود؛ حالا بکتست روی داده‌ی یک‌دقیقه‌ای", "4-hour candles were too coarse for these zones; backtests now run on 1-minute data", "nd"]
+    ];
+    var tb = document.getElementById("bugRows");
+    function render() {
+      var l = lang() === "en" ? 1 : 0; tb.innerHTML = "";
+      rows.forEach(function (r) {
+        var tr = document.createElement("tr");
+        var a = document.createElement("td"); a.textContent = A[r[0]][l];
+        var s = document.createElement("td"); var sp = document.createElement("span"); sp.className = "sev" + (SV[r[1]][2] ? " hi" : ""); sp.textContent = SV[r[1]][l]; s.appendChild(sp);
+        var t = document.createElement("td"); t.textContent = l ? r[3] : r[2];
+        var st = document.createElement("td"); var ss = document.createElement("span"); ss.className = "st " + (r[4] === "ok" ? "ok" : "wip"); ss.textContent = ST[r[4]][l]; st.appendChild(ss);
+        tr.appendChild(a); tr.appendChild(s); tr.appendChild(t); tr.appendChild(st); tb.appendChild(tr);
+      });
+    }
+    onLang(render); render();
+  })();
+
+  /* ---------------- Bale-style log stream ---------------- */
+  (function logs() {
+    /* {…} marks a left-to-right chunk inside a Persian line */
+    var FA = [
+      ["20:36", "🤖 ربات روشن شد", "حساب: {MetaQuotes-Demo} | دمو", "بالانس: {100,000 USD} | اکویتی: {100,000}", "سبد: ۱۰ نماد ({XAUUSD, AUDJPY, AUDUSD, CHFJPY, …})", "ریسک {0.5%} | حد سود {3R} | سقف سفارش: هر چارت ۳، کل ۸"],
+      ["20:37", "🌙 بازار تعطیل است — ربات بیدار است و منتظر باز شدن بازار می‌ماند (سفارش‌ها و پوزیشن‌ها دست‌نخورده‌اند)."],
+      ["14:00", "🌞 بازار باز شد — ربات دوباره شروع به کار کرد."],
+      ["21:50", "🟢 سفارش خرید گذاشته شد | {USDCHF}", "زون {USDCHF_H4_2609301600B} | حجم {1.93} لات (ریسک واقعی {206$})", "سشن: آسیا (پایان) × {0.5}", "ورود {0.83306} | استاپ {0.83217} | تارگت {0.83574}"],
+      ["21:50", "🔄 همگام‌سازی کامل شد (شروع ربات) | سفارش‌های تخصیص‌یافته: ۸ از سقف ۸"],
+      ["06:00", "🗑 سفارش لغو شد | زون {AUDUSD_H4_00300} | فروش", "├ مشخصات: ورود {0.72222} | استاپ {0.7229} | تارگت {0.72017} | حجم {9.37}", "├ عمر سفارش: {59} دقیقه", "├ دلیل دقیق: روند روزانه: صعودی | روند {H4}: نزولی", "└ اقدام بعدی: دوباره چیده نمی‌شود (زون طبق قوانین باطل شد)"],
+      ["19:39", "💰 سیو سود انجام شد! زون {CHFJPY_H4_00368}", "سود به ۲ برابر ریسک رسید — {3.41} لات از {6.83} لات نقد شد؛ بقیه به سمت تارگت ادامه می‌دهد."],
+      ["10:52", "🏁 معامله بسته شد (حد سود خورد ✨) | زون {CHFJPY_H4_00368}", "نتیجه‌ی این معامله: {+0.80%} در سود", "برایند کل حساب: {+1.70%} در سود"],
+      ["12:00", "📊 گزارش روزانه‌ی حساب", "{USDCHF} (فروش): {−0.41%} در ضرر", "{USDCAD} (خرید): {+0.17%} در سود", "— برایند معامله‌های باز: {−0.23%} در ضرر", "— سفارش‌های در انتظار: ۷", "— بالانس: {101,696} | اکویتی: {EUR 101,458}"],
+      ["12:05", "🟢 ربات در حال اجراست | همه‌چیز سالم است | سفارش‌های در انتظار: ۷ | معامله‌های باز: ۲"],
+      ["14:00", "⚠️ ارتباط با متاتریدر قطع شد! تلاش خودکار برای اتصال دوباره شروع شد…"],
+      ["14:00", "✅ اتصال برقرار شد | حساب دمو | موجودی {EUR 101,696.42}"],
+      ["19:18", "🚨 متاتریدر به سرور بروکر وصل نیست (اینترنت یا سرور بروکر قطع است!)"],
+      ["19:24", "🟢 مشکل برطرف شد — همه‌چیز دوباره سالم است و ربات ادامه می‌دهد."],
+      ["20:51", "🚨 ربات از کار افتاد! ۱۵ دقیقه است ضربان نزده (آخرین: {20:36})", "دارم دوباره راه‌اندازی‌اش می‌کنم…"],
+      ["08:21", "🛡 نگهبان: ✅ ربات برگشت (آخرین ضربان {0.3} دقیقه پیش)."]
+    ];
+    var EN = [
+      ["20:36", "🤖 Robot started", "Account: MetaQuotes-Demo | demo", "Balance: 100,000 USD | Equity: 100,000", "Basket: 10 symbols (XAUUSD, AUDJPY, AUDUSD, CHFJPY, …)", "Risk 0.5% | Target 3R | Order cap: 3 per chart, 8 total"],
+      ["20:37", "🌙 Market closed — the robot is awake and waiting for the open (orders and positions untouched)."],
+      ["14:00", "🌞 Market open — the robot is back to work."],
+      ["21:50", "🟢 Buy order placed | USDCHF", "Zone USDCHF_H4_2609301600B | 1.93 lots (real risk $206)", "Session: Asia (late) × 0.5", "Entry 0.83306 | Stop 0.83217 | Target 0.83574"],
+      ["21:50", "🔄 Sync complete (robot start) | orders allocated: 8 of 8"],
+      ["06:00", "🗑 Order cancelled | zone AUDUSD_H4_00300 | sell", "├ Details: entry 0.72222 | stop 0.7229 | target 0.72017 | 9.37 lots", "├ Order age: 59 minutes", "├ Exact reason: daily trend up | H4 trend down", "└ Next step: not re-placed (zone invalidated by the rules)"],
+      ["19:39", "💰 Partial close done! zone CHFJPY_H4_00368", "Profit reached 2× risk — 3.41 of 6.83 lots closed; the rest runs to target."],
+      ["10:52", "🏁 Trade closed (target hit ✨) | zone CHFJPY_H4_00368", "This trade: +0.80% profit", "Whole account: +1.70% profit"],
+      ["12:00", "📊 Daily account report", "USDCHF (sell): −0.41% loss", "USDCAD (buy): +0.17% profit", "— Open trades net: −0.23% loss", "— Pending orders: 7", "— Balance: 101,696 | Equity: EUR 101,458"],
+      ["12:05", "🟢 Robot running | all healthy | pending orders: 7 | open trades: 2"],
+      ["14:00", "⚠️ Connection to MetaTrader lost! Automatic reconnect started…"],
+      ["14:00", "✅ Connected | demo account | balance EUR 101,696.42"],
+      ["19:18", "🚨 MetaTrader is not connected to the broker (internet or broker server down!)"],
+      ["19:24", "🟢 Fixed — everything is healthy again and the robot continues."],
+      ["20:51", "🚨 Robot down! No heartbeat for 15 minutes (last: 20:36)", "Restarting it now…"],
+      ["08:21", "🛡 Watchdog: ✅ robot is back (last heartbeat 0.3 minutes ago)."]
+    ];
+    var feed = document.getElementById("feed"), btn = document.getElementById("feedBtn"), cnt = document.getElementById("feedCount"), state = document.getElementById("feedState");
+    var START = 5, pos = START, playing = !reduce, timer = 0, visible = false;
+    function bubble(m, isFa) {
+      var b = document.createElement("div"); b.className = "msg" + (isFa ? "" : " en-log");
+      m.slice(1).forEach(function (line) {
+        var ln = document.createElement("span"); ln.className = "ln"; ln.dir = isFa ? "rtl" : "ltr";
+        if (isFa) {
+          line.split(/(\{[^}]*\})/).forEach(function (part) {
+            if (!part) return;
+            if (part.charAt(0) === "{") { var bd = document.createElement("bdi"); bd.dir = "ltr"; bd.textContent = part.slice(1, -1); ln.appendChild(bd); }
+            else ln.appendChild(document.createTextNode(part));
+          });
+        } else ln.textContent = line;
+        b.appendChild(ln);
+      });
+      var tm = document.createElement("span"); tm.className = "tm"; tm.textContent = isFa ? faDigits(m[0]) : m[0]; b.appendChild(tm);
+      return b;
+    }
+    function labels() {
+      var fa = lang() === "fa", list = fa ? FA : EN;
+      btn.textContent = playing ? (fa ? "توقف" : "Pause") : (pos >= list.length ? (fa ? "از اول" : "Replay") : (fa ? "پخش" : "Play"));
+      cnt.textContent = fa ? faDigits(pos) + " از " + faDigits(list.length) + " پیام" : pos + " of " + list.length + " messages";
+      state.textContent = fa ? (playing ? "در حال دریافت…" : "آنلاین") : (playing ? "receiving…" : "online");
+      state.parentNode.querySelector("b").textContent = fa ? "لاگ ربات" : "Robot log";
+    }
+    function render(all) {
+      var fa = lang() === "fa", list = fa ? FA : EN;
+      feed.innerHTML = "";
+      for (var i = 0; i < (all ? list.length : pos); i++) feed.appendChild(bubble(list[i], fa));
+      feed.scrollTop = feed.scrollHeight; labels();
+    }
+    function step() {
+      var fa = lang() === "fa", list = fa ? FA : EN;
+      if (pos >= list.length) { playing = false; labels(); return; }
+      var b = bubble(list[pos], fa); b.classList.add("new"); feed.appendChild(b); pos++;
+      feed.scrollTop = feed.scrollHeight; labels();
+      schedule();
+    }
+    function schedule() { clearTimeout(timer); if (playing && visible) timer = setTimeout(step, 2300); }
+    btn.addEventListener("click", function () {
+      var list = lang() === "fa" ? FA : EN;
+      if (playing) { playing = false; clearTimeout(timer); }
+      else { if (pos >= list.length) { pos = START; render(false); } playing = true; schedule(); }
+      labels();
+    });
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(function (es) { visible = es[0].isIntersecting; if (visible) schedule(); else clearTimeout(timer); }, { threshold: .35 }).observe(feed);
+    } else { visible = true; }
+    onLang(function () { render(false); schedule(); });
+    if (reduce) { pos = FA.length; playing = false; }
+    render(false);
+  })();
+
+  /* ---------------- public tools with source ---------------- */
+  (function tools() {
+    var D = JSON.parse(document.getElementById("codes").textContent);
+    var box = document.getElementById("toolList");
+    D.forEach(function (t, i) {
+      var c = document.createElement("article"); c.className = "tool";
+      c.innerHTML =
+        '<div class="top"><h3><span class="fa"></span><span class="en"></span></h3><span class="file"></span></div>' +
+        '<p><span class="fa"></span><span class="en"></span></p>' +
+        '<div class="tested"><span><span class="fa"></span><span class="en"></span></span></div>' +
+        '<div class="bar"><button class="copy" type="button"><span class="fa">کپی کد</span><span class="en">Copy code</span></button><span class="copied" hidden><span class="fa">کپی شد</span><span class="en">Copied</span></span></div>' +
+        '<details><summary><span class="fa">نمایش کد</span><span class="en">Show code</span><span style="color:var(--muted);font-size:var(--t-xs)"><span class="fa ln-fa"></span><span class="en ln-en mono"></span></span></summary><pre class="code"><code class="language-python"></code></pre></details>';
+      var q = function (s) { return c.querySelectorAll(s); };
+      q("h3 .fa")[0].textContent = t.name_fa; q("h3 .en")[0].textContent = t.name_en;
+      q(".file")[0].textContent = t.file;
+      q("p .fa")[0].textContent = t.desc_fa; q("p .en")[0].textContent = t.desc_en;
+      q(".tested .fa")[0].textContent = t.test_fa; q(".tested .en")[0].textContent = t.test_en;
+      q(".ln-fa")[0].textContent = "· " + faDigits(t.lines) + " خط"; q(".ln-en")[0].textContent = "· " + t.lines + " lines";
+      var code = q("code")[0]; code.textContent = t.code;
+      var det = q("details")[0], done = false;
+      det.addEventListener("toggle", function () {
+        if (det.open && !done && window.hljs) { try { window.hljs.highlightElement(code); } catch (e) {} done = true; }
+      });
+      q(".copy")[0].addEventListener("click", function () { copyText(t.code, code, q(".copied")[0]); });
+      box.appendChild(c);
+    });
+  })();
+})();
+</script>
