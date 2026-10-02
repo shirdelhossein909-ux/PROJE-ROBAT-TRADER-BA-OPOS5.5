@@ -282,6 +282,10 @@ DESIGN_VARIANTS = {
     "بیس_۱دقیقه_روی_بیس_۱۵دقیقه": ({"ltf_mode": "zone", "ltf_ext": True},
         "مثل اجرای اصلی، ولی اگر یک بیس قوی ۱دقیقه چسبیده روی بیس ۱۵دقیقه باشد جزو آن حساب می‌شود "
         "(فقط اگر ارتفاع بیس کمتر از ۱٫۴ برابر شود)"),
+    "لگ‌اوت_بدون_شرط_قدرت": ({"ltf_mode": "zone", "legout_atr": 0.0},
+        "مثل اجرای اصلی، ولی بیس ۱۵دقیقه شرط «لگ‌اوت قوی» ندارد (فقط کنسالیدیشن اوی و تأیید چاک)"),
+    "لگ‌اوت_نصف": ({"ltf_mode": "zone", "legout_atr": 0.5},
+        "مثل اجرای اصلی، ولی لگ‌اوت قوی = بدنه‌ی کندل خروج دست‌کم نصفِ میانگین اندازه‌ی کندل‌ها (به‌جای یک برابر)"),
     # ورود روی بیس ۱دقیقه دو بار از ورود روی بیس ۱۵دقیقه بدتر بود؛ برای اجرای دوباره # را بردار:
     # "تأیید_۱دقیقه_ورود_بیس_۱دقیقه": ({"ltf_mode": "base"},
     #     "قیمت به بیس ۱۵دقیقه می‌رسد → چاک ۱دقیقه → اوردر روی بیس ۱دقیقه (ورود +۱۰٪، استاپ ۲۵٪، تارگت 3R)"),
@@ -1362,7 +1366,8 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                    retry_rejected_zones=False, return_state=False,
                    book=None, alloc_mode=False, arm_untouched_zones=False,
                    min_risk_spread=0.0, min_room_r=0.0, htf_location=False, trend_mode=None,
-                   ltf_mode=None, ltf_tests=None, ltf_test2_tl=False, htf_opp_no_oe=False, ltf_ext=False):
+                   ltf_mode=None, ltf_tests=None, ltf_test2_tl=False, htf_opp_no_oe=False, ltf_ext=False,
+                   legout_atr=None):
     """موتور استراتژی برای یک نماد — به‌صورت generator.
 
     ltf_mode (تأیید ۱دقیقه): None = سفارش لیمیت روی بیس ۱۵دقیقه (روش فعلی) |
@@ -1458,11 +1463,21 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
     w_z = dedup_zones_pit(build_zones(w1, symbol, "BIG", 12, w1["atr"])) if big_enabled else []
     # بیس‌های تایم زون: کنسالیدیشن اوی (داخل build_zones) → لگ‌اوت قوی + تأیید چاک → حذف هم‌پوشان‌ها
-    h_raw = build_zones(h4, symbol, zone_tf, 6,  h4["atr"])
+    _lo_atr = MIN_LEGOUT_BODY_ATR if legout_atr is None else float(legout_atr)   # لگ‌اوت قوی (۱۵دقیقه)
+    _wk15 = []
+    h_raw = build_zones(h4, symbol, zone_tf, 6,  h4["atr"], weak_out=_wk15)
+    # قیف: فقط بیس‌هایی که در بازه‌ی معامله متولد شده‌اند
+    _p0 = pd.Timestamp(bt_start)
+    _p1 = pd.Timestamp(BACKTEST_END) if BACKTEST_END is not None else pd.Timestamp.max
+    _in_p = lambda t_: _p0 <= pd.Timestamp(t_) <= _p1
+    _fun = {"oe": sum(_in_p(z.created_time) for z in h_raw),
+            "strong": sum(_in_p(z.created_time) for z in h_raw if z.conf_body_atr >= _lo_atr)}
+    _fun["all"] = _fun["oe"] + sum(_in_p(z.base_end) for z in _wk15)
     if CHOCH_CONFIRM:   # «بیس‌های چسبیده» فقط برای ۱دقیقه است؛ اینجا خاموش
-        h_raw = choch_confirm_zones(h_raw, h4, min_body_atr=MIN_LEGOUT_BODY_ATR, cluster_gap_atr=0.0)
-    elif MIN_LEGOUT_BODY_ATR > 0:
-        h_raw = [z for z in h_raw if z.conf_body_atr >= MIN_LEGOUT_BODY_ATR]
+        h_raw = choch_confirm_zones(h_raw, h4, min_body_atr=_lo_atr, cluster_gap_atr=0.0)
+    elif _lo_atr > 0:
+        h_raw = [z for z in h_raw if z.conf_body_atr >= _lo_atr]
+    _fun["choch"] = sum(_in_p(z.created_time) for z in h_raw)
     h_z = dedup_zones_pit(h_raw)
 
     # ZoneID
@@ -2297,6 +2312,11 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
     _Z_LTI = np.full(_nz, -10**9, dtype=np.int64)    # = last_touch_i (None → خیلی قدیم)
     _Z_CAT = np.full(_nz, 999, dtype=np.int64)       # = clean_after_touch
     _Z_USED = np.zeros(_nz, dtype=bool)              # = id(z) in used
+    # قیف: آخرین دلیلی که زون آماده‌ی معامله نشد (کد) و اینکه بالاخره آماده شد یا نه
+    _Z_LAST = np.zeros(_nz, dtype=np.int8)
+    _Z_PLACED = np.zeros(_nz, dtype=bool)
+    _WHY_CODE = {"رد_به_خاطر_زون_مخالف_تایم_بالا": 2, "رد_به_خاطر_نزدیکی_زون_مخالف": 3,
+                 "رد_به_خاطر_سه_سی‌پی_پشت‌سرهم": 4}
     _kmap = {id(z): k for k, z in enumerate(h_z)}
 
     class _UsedSet(set):
@@ -2506,6 +2526,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
 
             if z.direction not in allowed_now:
                 reasons["رد_به_خاطر_روند"] += 1
+                _Z_LAST[k] = 1
                 if retry_rejected_zones:
                     continue
                 set_final(zone_df, z.zone_id, "رد شد",
@@ -2558,6 +2579,7 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             _why = design_block(z, levels, t, o)
             if _why:
                 reasons[_why] += 1
+                _Z_LAST[k] = _WHY_CODE.get(_why, 6)
                 set_final(zone_df, z.zone_id, "رد شد", _why.replace("_", " "), t, idx=z_idx)
                 log_event(events, t, symbol, z.zone_id, "Rejected", _why)
                 used.add(id(z)); continue
@@ -2580,6 +2602,11 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
         # این سفارش‌ها جای واقعی از سقف حساب اشغال می‌کنند — بدون مدل کردنشان
         # بک‌تست خیلی خوش‌بینانه می‌شود.
         armed_cands = []
+        if arm_untouched_zones and len(live_k):
+            # قیف: زون‌های لمس‌نشده‌ای که جهتشان الان مجاز نیست
+            _lu = live_k[(_Z_TC[live_k] == 0) & ~_Z_USED[live_k]]
+            _bad = np.where(_Z_BUY[_lu], "BUY" not in allowed_now, "SELL" not in allowed_now) | bool(drg or hrg)
+            _Z_LAST[_lu[_bad]] = 1
         if arm_untouched_zones and not (drg or hrg) and allowed_now:
             _hits_arm = big_body_hits(t, o_prev, c_prev)
             for k in live_k[(_Z_TC[live_k] == 0) & ~_Z_USED[live_k]]:
@@ -2594,10 +2621,13 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                     continue
                 opp_dir = "SELL" if z.direction == "BUY" else "BUY"
                 if _hits_arm[opp_dir]:
+                    _Z_LAST[k] = 5
                     continue
                 if z.high() - z.low() <= 0:
                     continue
                 if not armed_quality_ok(z, levels, t, _h4_atr_a[i-1], o):
+                    _why_a = design_block(z, levels, t, o)
+                    _Z_LAST[k] = _WHY_CODE.get(_why_a, 6) if _why_a else 6
                     continue
                 armed_cands.append((z, 1))
             armed_cands.sort(key=lambda zc: abs(c - zc[0].proximal))
@@ -2641,6 +2671,9 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
                 reasons["رد_به_خاطر_سقف_پوزیشن_کل_حساب"] += 1
                 continue
             _po = make_order(z, t, test_no)
+            _kz = _kmap.get(id(z))
+            if _kz is not None:
+                _Z_PLACED[_kz] = True
             if ltf_on:
                 # تأیید ۱دقیقه: اگر قیمت همین حالا روی بیس است مستقیم منتظر چاک می‌مانیم
                 _rg = _m15_range(t)
@@ -2799,6 +2832,21 @@ def _backtest_core(symbol, h4, d1, w1, years, spread,
             if p["active"] and (not p["filled"]):
                 set_final(zone_df, p["z"].zone_id, "سفارش پر نشد", "تا پایان دیتا پر نشد", endt, idx=z_idx)
                 log_event(events, endt, symbol, p["z"].zone_id, "Unfilled", "")
+
+    # ---------- قیف بیس‌ها (فقط بیس‌های متولد در بازه‌ی معامله) ----------
+    _inz = np.array([_in_p(z.created_time) for z in h_z], dtype=bool) if _nz else np.zeros(0, dtype=bool)
+    _np_ = _inz & ~_Z_PLACED
+    reasons.update({
+        "قیف_۱_همه‌ی_بیس‌ها": int(_fun["all"]), "قیف_۲_با_کنسالیدیشن_اوی": int(_fun["oe"]),
+        "قیف_۳_با_لگ‌اوت_قوی": int(_fun["strong"]), "قیف_۴_با_تأیید_چاک": int(_fun["choch"]),
+        "قیف_۵_بعد_از_حذف_هم‌پوشان": int(_inz.sum()), "قیف_۶_آماده‌ی_معامله_شد": int((_inz & _Z_PLACED).sum()),
+        "قیف_رد_روند": int((_np_ & (_Z_LAST == 1)).sum()),
+        "قیف_رد_داخل_زون_مخالف": int((_np_ & (_Z_LAST == 2)).sum()),
+        "قیف_رد_نزدیک_زون_مخالف": int((_np_ & (_Z_LAST == 3)).sum()),
+        "قیف_رد_سه_سی‌پی": int((_np_ & (_Z_LAST == 4)).sum()),
+        "قیف_رد_سایر": int((_np_ & ((_Z_LAST == 5) | (_Z_LAST == 6))).sum()),
+        "قیف_باطل_پیش_از_آماده_شدن": int((_np_ & (_Z_LAST == 0)).sum()),
+    })
 
     tdf=pd.DataFrame(trades)
     if tdf.empty:
@@ -4012,6 +4060,43 @@ def write_simple_excel(sw, runs, frames):
     # همه‌ی معاملات با زمان‌ها (ساعت سرور بروکر، همان ساعت چارت متاتریدر)
     for name, results, _book, tmode in runs:
         reviews.append((name,) + tuple(trades_review_table(name, results, frames, tmode)))
+    # قیف بیس‌ها: هر ردیف یک مرحله، هر ستون یک اجرا (جمع همه‌ی نمادها)
+    stages = [("قیف_۱_همه‌ی_بیس‌ها", "۱. همه‌ی بیس‌های ۱۵دقیقه (با و بدون کنسالیدیشن اوی)"),
+              ("قیف_۲_با_کنسالیدیشن_اوی", "۲. با کنسالیدیشن اوی"),
+              ("قیف_۳_با_لگ‌اوت_قوی", "۳. با لگ‌اوت قوی"),
+              ("قیف_۴_با_تأیید_چاک", "۴. با تأیید چاک"),
+              ("قیف_۵_بعد_از_حذف_هم‌پوشان", "۵. بعد از حذف بیس‌های هم‌پوشان"),
+              ("قیف_۶_آماده‌ی_معامله_شد", "۶. آماده‌ی معامله شد (روندها و فیلترها اجازه دادند)"),
+              ("قیف_رد_روند", "   آماده نشد: روند ۴ساعته یا ۱۵دقیقه هم‌جهت نبود"),
+              ("قیف_رد_داخل_زون_مخالف", "   آماده نشد: داخل زون مخالف ۴ساعته"),
+              ("قیف_رد_نزدیک_زون_مخالف", "   آماده نشد: نزدیک‌تر از ۳ برابر ریسک به زون مخالف ۴ساعته"),
+              ("قیف_رد_سه_سی‌پی", "   آماده نشد: سه سی‌پی پشت‌سرهم"),
+              ("قیف_رد_سایر", "   آماده نشد: دلایل دیگر"),
+              ("قیف_باطل_پیش_از_آماده_شدن", "   آماده نشد: پیش از آن باطل یا جایگزین شد"),
+              ("لغو_به_خاطر_رنج_یا_روند_لحظه_ورود", "۷. بعد از آماده شدن، روند برگشت و لغو شد"),
+              ("رسیدن_به_بیس_۱۵دقیقه", "۸. قیمت به بیس رسید (هر تست یک بار)"),
+              ("لغو_شکست_بیس_با_کلوز_۱۵دقیقه", "۹. بیس پیش از معامله با کلوز ۱۵دقیقه شکست"),
+              ("تأیید_چاک_۱دقیقه", "۱۰. چاک ۱دقیقه آمد"),
+              ("ورود_انجام_شد", "۱۱. معامله شد")]
+    fun_rows = []
+    for key, lab in stages:
+        row = {"مرحله": lab}
+        for name, results, _book, _tm in runs:
+            tot = 0
+            for r in results.values():
+                rdf = r[1]
+                if rdf is not None and not rdf.empty and "دلیل" in rdf.columns:
+                    tot += int(rdf.loc[rdf["دلیل"] == key, "تعداد"].sum())
+            row[name] = tot
+        fun_rows.append(row)
+    pd.DataFrame(fun_rows).to_excel(sw, sheet_name="قیف", index=False)
+    pd.DataFrame({"توضیح": [
+        "مراحل ۱ تا ۶ فقط بیس‌هایی را می‌شمارند که در بازه‌ی معامله متولد شده‌اند.",
+        "«آماده‌ی معامله شد» یعنی ربات دست‌کم یک بار منتظر رسیدن قیمت به آن بیس ماند.",
+        "برای بیس‌هایی که آماده نشدند، آخرین دلیلی که جلویشان را گرفت شمرده شده است.",
+        "مراحل ۸ تا ۱۱ برای هر تست شمرده می‌شوند (یک بیس می‌تواند بیش از یک بار شمرده شود).",
+    ]}).to_excel(sw, sheet_name="قیف", index=False, startrow=len(fun_rows) + 2)
+
     sdf = session_results_table(runs)
     if not sdf.empty:
         sdf.to_excel(sw, sheet_name="سشن‌ها", index=False)
