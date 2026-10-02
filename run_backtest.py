@@ -8,6 +8,8 @@
   ۴) قیمت به بیس ۱۵دقیقه برسد → منتظر چاک ۱دقیقه در جهت بیس → اوردر لیمیت روی بیس ۱۵دقیقه
      (ورود +۱۰٪ بیرون از پراکسیمال، استاپ ۲۵٪ پشت دیستال، تارگت 3R، نصف حجم در 2R سیو)
   ۵) فقط تست اول | بیس با کلوز ۱۵دقیقه پشت دیستال باطل | اوردر پرنشده با دور شدن 7R لغو
+  ۶) لغو پیش از ورود: روند برگشت | قیمت از زون مخالف ۴ساعته آمده یا (تا ورود) به آن خورد |
+     بعد از چاک ۱دقیقه قیمت به بیس مخالف معتبر ۱۵دقیقه خورد
 
 دیتا: پوشه‌ی «0» روی دسکتاپ — برای هر نماد یک ZIP (یا پوشه) با فایل‌های -1.csv، -15.csv و -240.csv
       (خروجی export_data.bat) + spreads.csv برای اسپرد واقعی (export_spreads.bat).
@@ -28,9 +30,10 @@ import pandas as pd
 # ============================================================================
 # تنظیمات
 # ============================================================================
-# بازه‌ی معامله (اگر دیتای ۱دقیقه کوتاه‌تر باشد، بازه خودکار با آن هماهنگ می‌شود)
-BACKTEST_START = pd.Timestamp("2025-01-01")
-BACKTEST_END = pd.Timestamp("2025-12-31 23:59:59")   # None = تا انتهای دیتا
+# بازه‌ی معامله — خودکار با دیتای ۱دقیقه هماهنگ می‌شود: از جایی که دیتای ۱دقیقه (بدون جای خالی بزرگ) شروع
+# می‌شود تا آخرش. پس این دو عدد فقط سقف بازه‌اند؛ برای همه‌ی دیتای موجود دست نزن.
+BACKTEST_START = pd.Timestamp("2015-01-01")
+BACKTEST_END = None                                   # None = تا انتهای دیتا
 WARMUP_DAYS = 120          # روند و بیس‌ها از این چند روز قبل ساخته می‌شوند؛ در این مدت معامله نیست
 ONLY_SYMBOLS = ["XAUUSD"]  # خالی = همه‌ی نمادهای پوشه‌ی دیتا
 
@@ -90,6 +93,8 @@ EXTRA_RUNS = {
         "مثل اجرای اصلی، ولی بیس ۱۵دقیقه شرط «لگ‌اوت قوی» ندارد (فقط کنسالیدیشن اوی و تأیید چاک)"),
     "لگ‌اوت_نصف": ({"legout_atr": 0.5},
         "مثل اجرای اصلی، ولی لگ‌اوت قوی = بدنه‌ی کندل خروج دست‌کم نصفِ میانگین اندازه‌ی کندل‌ها (به‌جای یک برابر)"),
+    "روند_۴ساعته_برگشت_لغو_نشود": ({"keep_on_htf_flip": True},
+        "مثل اجرای اصلی، ولی اگر روند ۴ساعته پیش از ورود برگردد اوردر لغو نمی‌شود (فقط برگشت روند ۱۵دقیقه لغو می‌کند)"),
     "خلاف_روند_۴ساعته_با_شرط": ({"counter_htf": True},
         "روند ۴ساعته لازم نیست هم‌جهت باشد (روند ۱۵دقیقه لازم است). معامله‌ی خلاف روند ۴ساعته فقط وقتی که "
         "قیمت از بیس ۴ساعته‌ی هم‌جهت روند ۴ساعته نمی‌آید (مثلاً در روند صعودی ۴ساعته، اگر قیمت از دیمند ۴ساعته "
@@ -373,6 +378,7 @@ class Zone:
         self.base_start = base_start
         self.base_end = base_end
         self.superseded_time = None        # بیس جدیدِ هم‌پوشان از این لحظه جایش را می‌گیرد
+        self.replaced_at = None            # زمان تولد همان بیس جدید (برای شمردن سی‌پی‌ها)
         self.conf_body_atr = 0.0           # بدنه‌ی کندل لگ‌اوت نسبت به ATR
 
     def low(self):
@@ -597,21 +603,35 @@ def choch_confirm_zones(zones, df, min_body_atr=0.0, weak=None, cluster_gap_atr=
     return out
 
 
+def _first_close_beyond(cl, start, level, above):
+    """اولین کندل از start به بعد که کلوزش بالای level (above) یا زیر آن بسته شده؛ len(cl) = هیچ‌وقت"""
+    n_ = len(cl)
+    a_ = max(int(start), 0)
+    while a_ < n_:
+        seg = cl[a_:min(a_ + 4096, n_)]
+        m_ = (seg > level) if above else (seg < level)
+        if m_.any():
+            return a_ + int(np.argmax(m_))
+        a_ += 4096
+    return n_
+
+
 def overlap_ratio(a_low, a_high, b_low, b_high):
     inter = max(0.0, min(a_high, b_high) - max(a_low, b_low))
     uni = max(a_high, b_high) - min(a_low, b_low)
     return inter / uni if uni > 0 else 0.0
 
 
-def dedup_zones_pit(zones, thr=0.55):
-    """حذف بیس‌های هم‌پوشان بدون نگاه به آینده: هر بیس جدید، بیس‌های هم‌پوشانِ قبلی را از «زمان تولد خودش»
-    به بعد جایگزین می‌کند و محدوده‌اش با آن‌ها تنگ‌تر می‌شود."""
+def dedup_zones_pit(zones, lag, thr=0.55):
+    """حذف بیس‌های هم‌پوشان بدون نگاه به آینده: هر بیس جدید، بیس‌های هم‌پوشانِ قبلی را از بسته شدن کندلی که
+    خودش را تأیید می‌کند (زمان تولد + lag = طول کندل) به بعد جایگزین می‌کند و محدوده‌اش با آن‌ها تنگ‌تر می‌شود."""
     zones = sorted(zones, key=lambda z: z.created_time)
     active = []
     for z in zones:
         for old in active:
             if overlap_ratio(z.low(), z.high(), old.low(), old.high()) >= thr:
-                old.superseded_time = z.created_time
+                old.superseded_time = np.datetime64(pd.Timestamp(z.created_time) + lag, "ns")
+                old.replaced_at = z.created_time
                 low = max(z.low(), old.low()); high = min(z.high(), old.high())
                 if low < high:
                     if z.direction == "BUY":
@@ -652,11 +672,11 @@ class AccountBook:
 
 
 # شمارنده‌های هر اجرا (برای قیف و جدول «کلی»)
-COUNT_KEYS = ("reach", "choch1", "filled", "market", "breach", "far", "badstop", "test2", "trend_cancel",
-              "f_all", "f_oe", "f_strong", "f_choch", "f_dedup", "f_ready",
-              "f_trend", "f_inside", "f_near", "f_cp", "f_dead")
-# دلیل آماده‌نشدن بیس (برای قیف): ۱ روند، ۲ داخل زون مخالف، ۳ نزدیک زون مخالف، ۴ سه سی‌پی
-_BLOCK_CODE = {"inside": 2, "near": 3, "cp": 4}
+COUNT_KEYS = ("reach", "choch1", "filled", "market", "f_all", "f_oe", "f_strong", "f_choch", "f_dedup", "f_ready")
+# دلیل آماده‌نشدن بیس (برای قیف)
+_BLOCK_CODE = {"trend4": 1, "inside": 2, "near": 3, "cp": 4, "trend15": 5, "trend_both": 6, "origin": 7}
+_LAST_FATE = {0: "n_dead", 1: "n_trend4", 2: "n_inside", 3: "n_near", 4: "n_cp", 5: "n_trend15",
+              6: "n_trend_both", 7: "n_origin"}
 
 
 def _symbol_metrics(symbol, trades, equity, max_dd, spread_ref):
@@ -679,14 +699,19 @@ def _symbol_metrics(symbol, trades, equity, max_dd, spread_ref):
     return m
 
 
+_M1_CACHE = {}
+
+
 def backtest_symbol(symbol, df15, df4, m1, spread, book,
-                    htf_opp_no_oe=False, legout_atr=None, counter_htf=False, live_from=None):
+                    htf_opp_no_oe=False, legout_atr=None, counter_htf=False, keep_on_htf_flip=False,
+                    live_from=None):
     """موتور استراتژی برای یک نماد (generator): سر هر کندل ۱۵دقیقه زمانش را yield می‌کند تا همه‌ی نمادها
     هم‌قدم روی یک حساب جلو بروند. خروجی: (کارنامه، شمارنده‌ها، جدول معاملات)
 
     htf_opp_no_oe: همه‌ی بیس‌های ۴ساعته‌ی مخالف (حتی بدون کنسالیدیشن اوی) جلوی معامله را می‌گیرند
     legout_atr: ضریب لگ‌اوت قوی بیس ۱۵دقیقه به‌جای MIN_LEGOUT_BODY_ATR
     counter_htf: روند ۴ساعته لازم نیست؛ خلاف روند ۴ساعته فقط اگر قیمت از بیس ۴ساعته‌ی هم‌جهت آن روند نمی‌آید
+    keep_on_htf_flip: برگشت روند ۴ساعته پیش از ورود اوردر را لغو نمی‌کند (فقط برگشت روند ۱۵دقیقه)
     live_from: حالت ربات لایو (live_state) — معامله از این زمان تا انتهای دیتا و خروجی = وضعیت همین الان"""
     bt_start = BACKTEST_START if live_from is None else pd.Timestamp(live_from)
     bt_end = BACKTEST_END if live_from is None else None
@@ -694,7 +719,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     spread_ref = float(spread) if float(spread) > 0 else float(SPREAD_TABLE.get(symbol, 0.0))
     spr = float(spread)        # قیمت‌ها Bid اند: خرید لیمیت با Ask (= Bid + اسپرد) پر و فروش با Ask بسته می‌شود
     swap_per_night = SWAP_SPREAD_MULT_PER_NIGHT * float(spread)
-    counts = dict.fromkeys(COUNT_KEYS, 0)
+    counts = dict.fromkeys(COUNT_KEYS, 0)       # + سرنوشت هر بیس (کلیدهای FATE_ROWS)
 
     df15 = df15.copy(); df4 = df4.copy()
     for df in (df15, df4):
@@ -735,7 +760,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     counts["f_all"] = counts["f_oe"] + sum(in_p(z.base_end) for z in weak15)
     raw = choch_confirm_zones(raw, df15, min_body_atr=lo_atr, cluster_gap_atr=0.0)   # بیس‌های چسبیده فقط ۱دقیقه
     counts["f_choch"] = sum(in_p(z.created_time) for z in raw)
-    zones = dedup_zones_pit(raw)
+    zones = dedup_zones_pit(raw, span15)
     # شناسه‌ی پایدار هر بیس (ربات لایو سفارش‌ها را با همین شناسه در کامنت سفارش پیدا می‌کند)
     seen = {}
     for z in zones:
@@ -744,7 +769,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         z.zone_id = zid if seen[zid] == 1 else f"{zid}{seen[zid]}"
 
     # ---------- بیس‌های ۴ساعته (با کنسالیدیشن اوی): زون مخالف و سی‌پی‌ها ----------
-    zones4 = dedup_zones_pit(build_zones(df4, BASE_MAX_CANDLES, df4["atr"]))
+    zones4 = dedup_zones_pit(build_zones(df4, BASE_MAX_CANDLES, df4["atr"]), span4)
 
     def _htf_arrays(zs):
         """هر زون ۴ساعته از بسته شدن کندل تولدش معتبر است تا جایگزین شود یا کندل ۴ساعته پشت دیستالش بسته شود."""
@@ -770,9 +795,10 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
 
     hz_from = None
     if len(zones4):
-        opp4 = (dedup_zones_pit(build_zones(df4, BASE_MAX_CANDLES, df4["atr"], legout_clear=0))
+        opp4 = (dedup_zones_pit(build_zones(df4, BASE_MAX_CANDLES, df4["atr"], legout_clear=0), span4)
                 if htf_opp_no_oe else zones4)
         hz_from, hz_until, hz_lo, hz_hi, hz_buy = _htf_arrays(opp4)
+        hz_f_ns, hz_u_ns = hz_from.astype(np.int64), hz_until.astype(np.int64)
 
     def htf_zone_block(direction, price, t_now):
         """قیمت داخل دیمند ۴ساعته → سل ممنوع | داخل سوپلای ۴ساعته → بای ممنوع"""
@@ -803,7 +829,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     seq = []
     for q, z in enumerate(cp_zs):
         ct = z.created_time
-        seq = [r for r in seq if not (cp_zs[r].superseded_time is not None and cp_zs[r].superseded_time <= ct)]
+        seq = [r for r in seq if not (cp_zs[r].replaced_at is not None and cp_zs[r].replaced_at <= ct)]
         seq = (seq + [q])[-60:]
         run = 0
         for r in reversed(seq):
@@ -837,7 +863,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     # +1 = قیمت از یک دیمند ۴ساعته می‌آید، -1 = از یک سوپلای، 0 = هیچ (یا آن بیس بعداً شکست).
     origin = None
     if counter_htf:
-        oz = dedup_zones_pit(build_zones(df4, BASE_MAX_CANDLES, df4["atr"], legout_clear=0))
+        oz = dedup_zones_pit(build_zones(df4, BASE_MAX_CANDLES, df4["atr"], legout_clear=0), span4)
         origin = np.zeros(len(df4), dtype=np.int8)
         if oz:
             d_t = df4["time"].to_numpy(dtype="datetime64[ns]")
@@ -870,19 +896,29 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     m1_h = m1["high"].astype(float).values
     m1_l = m1["low"].astype(float).values
     m1_c = m1["close"].astype(float).values
-    m1df = pd.DataFrame({"time": m1_t, "open": m1_o, "high": m1_h, "low": m1_l, "close": m1_c})
-    m1df["atr"] = atr(m1df)
-    weak1 = []
-    z1 = build_zones(m1df, BASE_MAX_CANDLES, m1df["atr"], weak_out=weak1)
-    z1 = choch_confirm_zones(z1, m1df, min_body_atr=MIN_LEGOUT_BODY_ATR, weak=weak1)
-    L_buy = np.array([z.direction == "BUY" for z in z1], dtype=bool)
-    L_lo = np.array([z.low() for z in z1], dtype=float)
-    L_hi = np.array([z.high() for z in z1], dtype=float)
-    L_be = np.array([np.searchsorted(m1_t, np.datetime64(pd.Timestamp(z.base_end), "ns")) for z in z1],
-                    dtype=np.int64)
-    conf_at = {}                         # کندل ۱دقیقه‌ای که چاک در آن بسته شد → بیس‌های ۱دقیقه
-    for q1, z in enumerate(z1):
-        conf_at.setdefault(int(np.searchsorted(m1_t, np.datetime64(pd.Timestamp(z.created_time), "ns"))), []).append(q1)
+    m1_t_ns = m1_t.astype("datetime64[ns]").astype(np.int64)
+    key1 = (len(m1), m1_t_ns[0], m1_t_ns[-1], MIN_LEGOUT_BODY_ATR, CHOCH_CLUSTER_GAP_ATR, CHOCH_CLUSTER_MAX_BARS,
+            LEGOUT_CLEAR_BARS, BASE_MAX_CANDLES)
+    cached = _M1_CACHE.get(symbol)
+    if live_from is None and cached is not None and cached[0] == key1:
+        z1, L_buy, L_lo, L_hi, L_be, conf_at = cached[1]
+    else:
+        m1df = pd.DataFrame({"time": m1_t, "open": m1_o, "high": m1_h, "low": m1_l, "close": m1_c})
+        m1df["atr"] = atr(m1df)
+        weak1 = []
+        z1 = build_zones(m1df, BASE_MAX_CANDLES, m1df["atr"], weak_out=weak1)
+        z1 = choch_confirm_zones(z1, m1df, min_body_atr=MIN_LEGOUT_BODY_ATR, weak=weak1)
+        L_buy = np.array([z.direction == "BUY" for z in z1], dtype=bool)
+        L_lo = np.array([z.low() for z in z1], dtype=float)
+        L_hi = np.array([z.high() for z in z1], dtype=float)
+        L_be = np.array([np.searchsorted(m1_t, np.datetime64(pd.Timestamp(z.base_end), "ns")) for z in z1],
+                        dtype=np.int64)
+        conf_at = {}                     # کندل ۱دقیقه‌ای که چاک در آن بسته شد → بیس‌های ۱دقیقه
+        for q1, z in enumerate(z1):
+            conf_at.setdefault(int(np.searchsorted(m1_t, np.datetime64(pd.Timestamp(z.created_time), "ns"))),
+                               []).append(q1)
+        if live_from is None:            # بیس‌های ۱دقیقه در همه‌ی اجراها یکی‌اند؛ یک بار ساخته می‌شوند
+            _M1_CACHE[symbol] = (key1, (z1, L_buy, L_lo, L_hi, L_be, conf_at))
     span15_ns = np.timedelta64(span15.value, "ns")
 
     def m1_range(t_bar):
@@ -967,7 +1003,49 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     pending = []      # هر بیس آماده: armed (منتظر رسیدن قیمت) → watch (منتظر چاک ۱دقیقه) → order (اوردر لیمیت)
     open_pos = []
 
-    def make_order(z, t_now, o_now):
+    # ---------- لغو با زون‌های مخالف ----------
+    # زون مخالف ۴ساعته: اگر قیمت از وقتی بیس تأیید شده به یک زون مخالف ۴ساعته‌ی معتبر خورده و آن زون تا رسیدن
+    # قیمت به بیس نشکسته، یعنی قیمت از آن آمده → لغو. بعد از رسیدن قیمت هم خوردن به زون مخالف ۴ساعته → لغو.
+    # بیس مخالف ۱۵دقیقه: آمدن قیمت از آن اشکالی ندارد، ولی بعد از چاک ۱دقیقه اگر قیمت پیش از پر شدن اوردر به یک
+    # بیس مخالف معتبر ۱۵دقیقه (کنسالیدیشن اوی + لگ‌اوت قوی + چاک، نشکسته) خورد → لغو.
+    no_idx = np.zeros(0, dtype=np.int64)
+
+    def opp4_candidates(buy_, e):
+        """زون‌های مخالف ۴ساعته‌ی آن طرف نقطه‌ی ورود (برای خرید: سوپلای‌های بالای ورود)"""
+        if hz_from is None:
+            return no_idx
+        return np.flatnonzero(~hz_buy & (hz_lo > e)) if buy_ else np.flatnonzero(hz_buy & (hz_hi < e))
+
+    def touched4(c, t_ns, h_, l_):
+        """کدام زون‌های c در زمان t معتبرند و قیمت (h_, l_) به آن‌ها خورد"""
+        if not len(c):
+            return c
+        return c[(hz_f_ns[c] <= t_ns) & (t_ns < hz_u_ns[c]) & (h_ >= hz_lo[c]) & (l_ <= hz_hi[c])]
+
+    def came_from4(p, t_ns):
+        """قیمت از زون مخالف ۴ساعته‌ای آمده که هنوز (لحظه‌ی t) نشکسته؟"""
+        return any(hz_u_ns[q] > t_ns for q in p["came4"])
+
+    def opp15_candidates(buy_, e):
+        return np.flatnonzero(~Z_BUY & (Z_LO > e)) if buy_ else np.flatnonzero(Z_BUY & (Z_HI < e))
+
+    def touched15(c, t_ns, h_, l_):
+        return bool(len(c)) and bool(((Z_VFROM[c] <= t_ns) & (t_ns < Z_VUNTIL[c]) & (h_ >= Z_LO[c])
+                                      & (l_ <= Z_HI[c])).any())
+
+    # سرنوشت هر بیس آماده (برای سربرگ قیف): مرحله + دلیل
+    STAGE_KEY = {"armed": "a", "watch": "w", "order": "o"}
+    Z_FATE = {}
+
+    def trend_reason(direction):
+        """کدام روند جلوی این جهت را گرفته: trend4 / trend15 / trend_both / origin (اجرای خلاف روند)"""
+        s_ = 1 if direction == "BUY" else -1
+        if counter_htf:
+            return "trend15" if htr != s_ else "origin"
+        ok4, ok15 = dtr == s_, htr == s_
+        return "trend_both" if not (ok4 or ok15) else ("trend4" if not ok4 else "trend15")
+
+    def make_order(z, k, t_now, o_now, i_now):
         height = z.high() - z.low()
         if height <= 0:
             height = 1e-9
@@ -986,15 +1064,27 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         rg = m1_range(t_now)
         # اگر قیمت همین حالا روی نقطه‌ی ورود است، مستقیم منتظر چاک می‌ماند
         stage = "watch" if (at and rg is not None) else "armed"
+        p = {"z": z, "k": k, "entry": float(entry), "sl": float(sl), "tp": float(tp), "risk": float(risk),
+             "active": True, "filled": False, "stage": stage,
+             "j_reach": rg[0] if rg is not None else 0, "away": False,
+             "c4": opp4_candidates(z.direction == "BUY", entry), "came4": set(), "c15": no_idx}
+        # زون‌های مخالف ۴ساعته‌ای که قیمت از تأیید بیس تا الان به آن‌ها خورده
+        c = p["c4"]
+        a = int(np.searchsorted(t15_ns, pd.Timestamp(z.created_time).value, side="right"))
+        if len(c) and a < i_now:
+            tb, hb, lb = t15_ns[a:i_now], h15[a:i_now], l15[a:i_now]
+            hit = ((hz_f_ns[c][:, None] <= tb) & (tb < hz_u_ns[c][:, None])
+                   & (hb >= hz_lo[c][:, None]) & (lb <= hz_hi[c][:, None])).any(axis=1)
+            p["came4"] = set(c[hit].tolist())
         if stage == "watch":
             counts["reach"] += 1
-        return {"z": z, "entry": float(entry), "sl": float(sl), "tp": float(tp), "risk": float(risk),
-                "active": True, "filled": False, "stage": stage,
-                "j_reach": rg[0] if rg is not None else 0, "away": False}
+            if came_from4(p, t_now.value):
+                ltf_cancel(p, "from4", "watch")
+        return p
 
-    def ltf_cancel(p, key):
+    def ltf_cancel(p, key, stage=None):
         p["active"] = False
-        counts[key] += 1
+        Z_FATE[p["k"]] = f"{STAGE_KEY[stage or p['stage']]}_{key}"
 
     def ltf_open(p, t_bar, j, j1, eff_entry, in_bar_fill):
         """پوزیشن از کندل ۱دقیقه‌ی j؛ in_bar_fill = لیمیت داخل همین کندل پر شد (وگرنه ورود با کلوز j).
@@ -1007,6 +1097,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         fill_t = pd.Timestamp(m1_t[j])
         p["filled"], p["active"] = True, False
         counts["filled"] += 1
+        Z_FATE[p["k"]] = "traded"
         trigger = eff_entry + PARTIAL_AT_R * risk if direction == "BUY" else eff_entry - PARTIAL_AT_R * risk
         pos = {"direction": direction, "eff_entry": float(eff_entry), "sl": float(p["sl"]), "tp": float(p["tp"]),
                "risk": float(risk), "risk_amt": float(book.risk_amount()), "fill_time": fill_t, "z": p["z"],
@@ -1035,20 +1126,34 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         رسید (تست دوم) → لغو."""
         buy_ = p["z"].direction == "BUY"
         e, r = p["entry"], p["risk"]
-        # میان‌بر: اگر کل همین کندل ۱۵دقیقه به نقطه‌ی ورود نرسیده، کندل‌های ۱دقیقه بررسی نمی‌شوند
-        if p["stage"] == "armed" and ((buy_ and l_bar + spr > e) or (not buy_ and h_bar < e)):
-            return None
         rng = m1_range(t_bar)
-        if rng is None:
+        # میان‌بر: اگر کل همین کندل ۱۵دقیقه به نقطه‌ی ورود نرسیده (یا ۱دقیقه ندارد)، فقط خود کندل ۱۵دقیقه
+        # برای لمس زون‌های مخالف بررسی می‌شود
+        if rng is None or (p["stage"] == "armed" and ((buy_ and l_bar + spr > e) or (not buy_ and h_bar < e))):
+            hit = touched4(p["c4"], t_bar.value, h_bar, l_bar)
+            if p["stage"] == "armed":
+                p["came4"].update(hit.tolist())
+            elif len(hit):
+                ltf_cancel(p, "touch4")
+            elif p["stage"] == "order" and touched15(p["c15"], t_bar.value, h_bar, l_bar):
+                ltf_cancel(p, "touch15")
             return None
         j, j1 = rng
         while j < j1:
+            tj = int(m1_t_ns[j])
             reach = (m1_l[j] + spr <= e) if buy_ else (m1_h[j] >= e)
             if p["stage"] == "armed":
+                p["came4"].update(touched4(p["c4"], tj, m1_h[j], m1_l[j]).tolist())
                 if reach:
-                    p["stage"], p["j_reach"], p["away"] = "watch", j, False
                     counts["reach"] += 1
+                    if came_from4(p, tj):                 # قیمت از زون مخالف ۴ساعته آمده
+                        ltf_cancel(p, "from4", "watch")
+                        return None
+                    p["stage"], p["j_reach"], p["away"] = "watch", j, False
             elif p["stage"] == "watch":
+                if len(touched4(p["c4"], tj, m1_h[j], m1_l[j])):
+                    ltf_cancel(p, "touch4")
+                    return None
                 if not p["away"]:
                     if (m1_h[j] >= e + LTF_TEST_AWAY_R * r) if buy_ else (m1_l[j] + spr <= e - LTF_TEST_AWAY_R * r):
                         p["away"] = True
@@ -1068,6 +1173,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
                                 "dist": float(zc.distal), "lvl": float(getattr(zc, "choch_level", np.nan)),
                                 "lvl_from": pd.Timestamp(getattr(zc, "choch_from", zc.base_start))}
                     p["stage"] = "order"
+                    p["c15"] = opp15_candidates(buy_, e)
                     # قیمتِ لحظه‌ی چاک از نقطه‌ی ورود گذشته؟ → ورود با قیمت بازار
                     if (buy_ and m1_c[j] + spr <= e) or (not buy_ and m1_c[j] >= e):
                         counts["market"] += 1
@@ -1076,6 +1182,12 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
             else:  # order
                 if (buy_ and m1_l[j] + spr <= e) or (not buy_ and m1_h[j] >= e):
                     return ltf_open(p, t_bar, j, j1, e, True)
+                if len(touched4(p["c4"], tj, m1_h[j], m1_l[j])):
+                    ltf_cancel(p, "touch4")
+                    return None
+                if touched15(p["c15"], tj, m1_h[j], m1_l[j]):
+                    ltf_cancel(p, "touch15")
+                    return None
                 if (m1_h[j] >= e + LTF_CANCEL_R * r) if buy_ else (m1_l[j] + spr <= e - LTF_CANCEL_R * r):
                     ltf_cancel(p, "far")
                     return None
@@ -1085,7 +1197,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     def cancel_orders_of_zone(z):
         for p in pending:
             if p["active"] and not p["filled"] and p["z"] is z:
-                p["active"] = False
+                ltf_cancel(p, "replaced")
 
     # ---------- وضعیت بیس‌ها (آرایه؛ شماره‌ی هر بیس در zones) ----------
     nz = len(zones)
@@ -1100,6 +1212,16 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
     Z_USED = np.zeros(nz, dtype=bool)              # آماده شد، رد شد یا پیش از بازه لمس شد → دیگر بررسی نمی‌شود
     Z_LAST = np.zeros(nz, dtype=np.int8)           # قیف: آخرین دلیل آماده‌نشدن
     Z_PLACED = np.zeros(nz, dtype=bool)            # قیف: آماده‌ی معامله شد
+    # اعتبار هر بیس به‌عنوان «بیس مخالف»: از بسته شدن کندل تأییدش تا جایگزینی یا کلوز ۱۵دقیقه پشت دیستالش
+    t15_ns = df15["time"].to_numpy(dtype="datetime64[ns]").astype(np.int64)
+    Z_VFROM = np.array([pd.Timestamp(z.created_time).value for z in zones], dtype=np.int64) + span15.value
+    Z_VUNTIL = Z_SUP.copy()
+    cl15_ = df15["close"].to_numpy(dtype=float)
+    for k in range(nz):
+        kb = _first_close_beyond(cl15_, int(np.searchsorted(t15_ns, Z_VFROM[k] - span15.value)), Z_DIST[k],
+                                 not Z_BUY[k])
+        if kb < len(cl15_):
+            Z_VUNTIL[k] = min(Z_VUNTIL[k], t15_ns[kb] + span15.value)
 
     t15 = df15["time"].to_numpy()
     o15 = df15["open"].to_numpy(dtype=float); h15 = df15["high"].to_numpy(dtype=float)
@@ -1170,7 +1292,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
                 continue
             z = zones[k]
             if z.direction not in allowed:
-                Z_LAST[k], Z_USED[k] = 1, True
+                Z_LAST[k], Z_USED[k] = _BLOCK_CODE[trend_reason(z.direction)], True
                 continue
             why = htf_block(z, t, o)
             if why:
@@ -1181,8 +1303,9 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         # ---------- بیس‌های لمس‌نشده (اگر الان مجاز نیستند، بعداً دوباره بررسی می‌شوند) ----------
         untouched = []
         lu = live_k[~Z_TOUCHED[live_k] & ~Z_USED[live_k]]
-        if len(lu):
-            Z_LAST[lu[np.where(Z_BUY[lu], "BUY" not in allowed, "SELL" not in allowed)]] = 1
+        for d_, m_ in (("BUY", Z_BUY[lu]), ("SELL", ~Z_BUY[lu])):
+            if d_ not in allowed and m_.any():
+                Z_LAST[lu[m_]] = _BLOCK_CODE[trend_reason(d_)]
         if allowed:
             for k in lu:
                 z = zones[k]
@@ -1199,7 +1322,7 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         yield t      # هم‌قدمی با بقیه‌ی نمادها (حساب مشترک)
 
         for k in touched + untouched:
-            pending.append(make_order(zones[k], t, o))
+            pending.append(make_order(zones[k], k, t, o, i))
             Z_PLACED[k] = Z_USED[k] = True
 
         # ---------- بی‌اعتبار شدن بیس: کندل ۱۵دقیقه‌ی قبلی پشت دیستال بسته شد ----------
@@ -1213,8 +1336,9 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         for p in pending:
             if not p["active"] or p["filled"]:
                 continue
-            if p["z"].direction not in allowed:        # روند پیش از ورود برگشت
-                ltf_cancel(p, "trend_cancel")
+            d_ = p["z"].direction                      # روند پیش از ورود برگشت → لغو
+            if (d_ != {1: "BUY", -1: "SELL"}.get(htr)) if keep_on_htf_flip else (d_ not in allowed):
+                ltf_cancel(p, trend_reason(d_))
                 continue
             pos = ltf_step(p, t, l, h)
             if pos is not None:
@@ -1243,13 +1367,14 @@ def backtest_symbol(symbol, df15, df4, m1, spread, book,
         for pos in open_pos:
             finalize_trade(pos, endt, c_last, "پایان دیتا")
 
-    # ---------- قیف بیس‌ها (فقط بیس‌های متولد در بازه‌ی معامله) ----------
+    # ---------- قیف: سرنوشت هر بیس (فقط بیس‌های متولد در بازه‌ی معامله) ----------
+    for p in pending:
+        Z_FATE[p["k"]] = f"{STAGE_KEY[p['stage']]}_end"           # تا آخر دیتا منتظر ماند
     inz = np.array([in_p(z.created_time) for z in zones], dtype=bool) if nz else np.zeros(0, dtype=bool)
-    nop = inz & ~Z_PLACED
-    counts.update({"f_dedup": int(inz.sum()), "f_ready": int((inz & Z_PLACED).sum()),
-                   "f_trend": int((nop & (Z_LAST == 1)).sum()), "f_inside": int((nop & (Z_LAST == 2)).sum()),
-                   "f_near": int((nop & (Z_LAST == 3)).sum()), "f_cp": int((nop & (Z_LAST == 4)).sum()),
-                   "f_dead": int((nop & (Z_LAST == 0)).sum())})
+    counts.update({"f_dedup": int(inz.sum()), "f_ready": int((inz & Z_PLACED).sum())})
+    for k in np.flatnonzero(inz):
+        f = Z_FATE.get(k, "a_end") if Z_PLACED[k] else _LAST_FATE[int(Z_LAST[k])]
+        counts[f] = counts.get(f, 0) + 1
     tdf = pd.DataFrame(trades)
     return _symbol_metrics(symbol, tdf, equity, max_dd, spread_ref), counts, tdf
 
@@ -1601,36 +1726,101 @@ def session_results_table(runs):
 
 # شمارنده‌های جدول «کلی» و مراحل سربرگ «قیف»
 SUMMARY_COUNTS = [("reach", "قیمت_به_بیس_رسید"), ("choch1", "چاک_۱دقیقه_آمد"), ("filled", "معامله"),
-                  ("market", "ورود_با_قیمت_بازار"), ("breach", "لغو_کلوز_پشت_بیس"),
-                  ("far", "لغو_دور_شدن_بدون_ورود"), ("test2", "لغو_تست_دوم"), ("badstop", "لغو_استاپ_نامعتبر")]
+                  ("market", "ورود_با_قیمت_بازار")]
 FUNNEL_STAGES = [("f_all", "۱. همه‌ی بیس‌های ۱۵دقیقه (با و بدون کنسالیدیشن اوی)"),
                  ("f_oe", "۲. با کنسالیدیشن اوی"),
                  ("f_strong", "۳. با لگ‌اوت قوی"),
                  ("f_choch", "۴. با تأیید چاک"),
-                 ("f_dedup", "۵. بعد از حذف بیس‌های هم‌پوشان"),
-                 ("f_ready", "۶. آماده‌ی معامله شد (روندها و فیلترها اجازه دادند)"),
-                 ("f_trend", "   آماده نشد: روند ۴ساعته یا ۱۵دقیقه هم‌جهت نبود"),
-                 ("f_inside", "   آماده نشد: داخل زون مخالف ۴ساعته"),
-                 ("f_near", "   آماده نشد: نزدیک‌تر از ۳ برابر ریسک به زون مخالف ۴ساعته"),
-                 ("f_cp", "   آماده نشد: سه سی‌پی پشت‌سرهم"),
-                 ("f_dead", "   آماده نشد: پیش از آن باطل یا جایگزین شد"),
-                 ("trend_cancel", "۷. بعد از آماده شدن، روند برگشت و لغو شد"),
-                 ("reach", "۸. قیمت به بیس رسید"),
-                 ("breach", "۹. بیس پیش از معامله با کلوز ۱۵دقیقه شکست"),
-                 ("choch1", "۱۰. چاک ۱دقیقه آمد"),
-                 ("filled", "۱۱. معامله شد")]
+                 ("f_dedup", "۵. بعد از حذف بیس‌های هم‌پوشان = بیس‌های معتبر (سرنوشتشان پایین)")]
+
+
+def _trend_rows(g, verb):
+    return [(f"{g}_trend4", f"روند ۴ساعته {verb}"), (f"{g}_trend15", f"روند ۱۵دقیقه {verb}"),
+            (f"{g}_trend_both", f"هر دو روند {verb}"),
+            (f"{g}_origin", "قیمت از بیس ۴ساعته‌ی هم‌جهت روند ۴ساعته آمد (فقط اجرای خلاف روند)")]
+
+
+# سرنوشت هر بیس معتبر — هر بیس دقیقاً در یک ردیف شمرده می‌شود
+FATE_GROUPS = [
+    ("آماده نشد (هیچ‌وقت اجازه‌ی معامله نگرفت)",
+     [("n_trend4", "روند ۴ساعته خلاف بیس بود"), ("n_trend15", "روند ۱۵دقیقه خلاف بیس بود"),
+      ("n_trend_both", "هر دو روند خلاف بیس بودند (یا بی‌روند)"),
+      ("n_origin", "قیمت از بیس ۴ساعته‌ی هم‌جهت روند ۴ساعته می‌آمد (فقط اجرای خلاف روند)"),
+      ("n_inside", "داخل زون مخالف ۴ساعته بود"), ("n_near", "نزدیک‌تر از ۳ برابر ریسک به زون مخالف ۴ساعته"),
+      ("n_cp", "سه سی‌پی پشت‌سرهم روی ۴ساعته"), ("n_dead", "پیش از بررسی شکست یا بیس جدید جایش را گرفت")]),
+    ("آماده شد ولی قیمت به بیس نرسید",
+     _trend_rows("a", "برگشت") + [("a_breach", "بیس با کلوز ۱۵دقیقه شکست"),
+                                  ("a_replaced", "بیس جدید هم‌پوشان جایش را گرفت"),
+                                  ("a_end", "تا آخر دیتا منتظر ماند")]),
+    ("قیمت به بیس رسید ولی چاک ۱دقیقه نیامد",
+     [("w_from4", "قیمت از زون مخالف ۴ساعته آمده بود"), ("w_touch4", "بعد از رسیدن، قیمت به زون مخالف ۴ساعته خورد"),
+      ("w_test2", "قیمت دور شد و بدون چاک برگشت (تست دوم)")] + _trend_rows("w", "برگشت")
+     + [("w_breach", "بیس با کلوز ۱۵دقیقه شکست"), ("w_replaced", "بیس جدید هم‌پوشان جایش را گرفت"),
+        ("w_end", "تا آخر دیتا منتظر چاک ماند")]),
+    ("چاک ۱دقیقه آمد ولی اوردر پر نشد",
+     [("o_touch15", "قیمت به بیس مخالف معتبر ۱۵دقیقه خورد"), ("o_touch4", "قیمت به زون مخالف ۴ساعته خورد"),
+      ("o_far", "قیمت ۷ آر دور شد و پر نشد")] + _trend_rows("o", "برگشت")
+     + [("o_breach", "بیس با کلوز ۱۵دقیقه شکست"), ("o_replaced", "بیس جدید هم‌پوشان جایش را گرفت"),
+        ("o_badstop", "لحظه‌ی چاک قیمت پشت استاپ بود"), ("o_end", "تا آخر دیتا اوردر پر نشد")]),
+    ("معامله شد", [("traded", "معامله شد")]),
+]
 
 
 def _run_counts(results):
-    tot = dict.fromkeys(COUNT_KEYS, 0)
+    tot = {}
     for r in results.values():
         for k, v in r[1].items():
-            tot[k] += int(v)
+            tot[k] = tot.get(k, 0) + int(v)
     return tot
 
 
+def funnel_table(runs):
+    """سربرگ قیف: مراحل ساخته شدن بیس، بعد سرنوشت هر بیس معتبر (ردیف‌هایی که در همه‌ی اجراها صفرند حذف)."""
+    counts = [(name, _run_counts(results)) for name, results, _b in runs]
+    main_n = counts[0][1].get("f_dedup", 0) if counts else 0
+
+    def row(label, key_list, top=False):
+        r = {"مرحله": label}
+        for name, c in counts:
+            r[name] = sum(c.get(k, 0) for k in key_list)
+        if counts:
+            v = r[counts[0][0]]
+            r["٪ اجرای اصلی (از بیس‌های معتبر)"] = round(v / main_n * 100.0, 1) if (main_n and not top) else None
+        return r
+
+    rows = [row(lab, [k], top=True) for k, lab in FUNNEL_STAGES]
+    rows.append({"مرحله": ""})
+    rows.append({"مرحله": "سرنوشت هر بیس معتبر (هر بیس فقط در یک ردیف):"})
+    for title, items in FATE_GROUPS:
+        rows.append(row(f"■ {title}", [k for k, _ in items]))
+        if len(items) > 1:
+            for k, lab in items:
+                r = row(f"      {lab}", [k])
+                if any(c.get(k, 0) for _n, c in counts):
+                    rows.append(r)
+    return pd.DataFrame(rows)
+
+
+def yearly_table(runs):
+    """نتیجه‌ی هر سال (از روی زمان ورود) برای هر اجرا."""
+    rows = []
+    for name, results, _book in runs:
+        tr = _all_trades(results)
+        if tr.empty:
+            continue
+        yrs = pd.to_datetime(tr["زمان_ورود"]).dt.year
+        R = tr["نتیجه_R"].astype(float)
+        for y in sorted(yrs.unique()):
+            r = R[yrs == y]
+            rows.append({"اجرا": name, "سال": int(y), "تعداد": int(len(r)),
+                         "درصد_برد": round(float((r > 0).mean() * 100.0), 1), "فاکتور_سود": _pf(r),
+                         "جمع_R": round(float(r.sum()), 2), "میانگین_R": round(float(r.mean()), 3)})
+        rows.append({})
+    return pd.DataFrame(rows)
+
+
 def write_excel(sw, runs, frames):
-    """سربرگ‌ها: «کلی»، «دلیل_استاپ‌ها»، «قیف»، «سشن‌ها» و «معاملات».
+    """سربرگ‌ها: «کلی»، «دلیل_استاپ‌ها»، «قیف»، «سال‌ها»، «سشن‌ها» و «معاملات».
     runs: [(اسم اجرا, results, book)] — خروجی: [(اسم اجرا، جدول معاملات، جدول خام)] برای نمودارها"""
     parts, causes = [], []
     for name, results, book in runs:
@@ -1647,10 +1837,10 @@ def write_excel(sw, runs, frames):
     main_tbl = pd.concat(parts, ignore_index=True)
     main_tbl.to_excel(sw, sheet_name="کلی", index=False)
     counts = {name: _run_counts(results) for name, results, _b in runs}
-    pd.DataFrame([{"اجرا": "قیف هر اجرا (تعداد کل در همه‌ی نمادها)"}]).to_excel(
+    pd.DataFrame([{"اجرا": "قیف هر اجرا (جزئیات کامل در سربرگ قیف)"}]).to_excel(
         sw, sheet_name="کلی", index=False, header=False, startrow=len(main_tbl) + 2)
-    pd.DataFrame([{"اجرا": name, **{lab: counts[name][k] for k, lab in SUMMARY_COUNTS}} for name, _r, _b in runs]
-                 ).to_excel(sw, sheet_name="کلی", index=False, startrow=len(main_tbl) + 3)
+    pd.DataFrame([{"اجرا": name, **{lab: counts[name].get(k, 0) for k, lab in SUMMARY_COUNTS}}
+                  for name, _r, _b in runs]).to_excel(sw, sheet_name="کلی", index=False, startrow=len(main_tbl) + 3)
 
     cdf = pd.concat(causes, ignore_index=True)
     cdf.to_excel(sw, sheet_name="دلیل_استاپ‌ها", index=False)
@@ -1663,15 +1853,17 @@ def write_excel(sw, runs, frames):
         "(نزدیک ۱ تا ۱.۵ = استاپ فقط کمی کوچک بود؛ خیلی بیشتر = خود بیس اشتباه بود).",
     ]}).to_excel(sw, sheet_name="دلیل_استاپ‌ها", index=False, startrow=len(cdf) + 2)
 
-    fun = pd.DataFrame([{"مرحله": lab, **{name: counts[name][k] for name, _r, _b in runs}}
-                        for k, lab in FUNNEL_STAGES])
+    fun = funnel_table(runs)
     fun.to_excel(sw, sheet_name="قیف", index=False)
     pd.DataFrame({"توضیح": [
-        "مراحل ۱ تا ۶ فقط بیس‌هایی را می‌شمارند که در بازه‌ی معامله متولد شده‌اند.",
-        "«آماده‌ی معامله شد» یعنی ربات دست‌کم یک بار منتظر رسیدن قیمت به آن بیس ماند.",
-        "برای بیس‌هایی که آماده نشدند، آخرین دلیلی که جلویشان را گرفت شمرده شده است.",
-        "لغو_تست_دوم (سربرگ کلی) = قیمت از بیس دور شد و پیش از چاک ۱دقیقه دوباره برگشت.",
+        "فقط بیس‌هایی شمرده می‌شوند که در بازه‌ی معامله متولد شده‌اند.",
+        "«آماده نشد»: هیچ‌وقت اجازه‌ی معامله نگرفت؛ آخرین دلیلی که جلویش را گرفت شمرده شده است.",
+        "«آماده شد»: ربات منتظر رسیدن قیمت به آن بیس ماند (روندها و فیلترهای ۴ساعته اجازه دادند).",
+        "جمع ردیف‌های ■ = مرحله‌ی ۵. ستون ٪ = سهم هر ردیف از بیس‌های معتبر اجرای اصلی.",
     ]}).to_excel(sw, sheet_name="قیف", index=False, startrow=len(fun) + 2)
+    ydf = yearly_table(runs)
+    if not ydf.empty:
+        ydf.to_excel(sw, sheet_name="سال‌ها", index=False)
 
     sdf = session_results_table(runs)
     if not sdf.empty:
@@ -1744,17 +1936,25 @@ def main():
     if not frames:
         raise ValueError("هیچ نمادی با دیتای کامل (-1، -15 و -240) در پوشه‌ی دیتا نیست.")
 
-    # بازه‌ی بک‌تست با دیتای ۱دقیقه هماهنگ می‌شود (جایی که همه‌ی نمادها دیتای ۱دقیقه دارند)
-    l0 = max(pd.Timestamp(f[2]["time"].min()) for f in frames.values())
+    # بازه‌ی بک‌تست با دیتای ۱دقیقه هماهنگ می‌شود: جایی که همه‌ی نمادها دیتای ۱دقیقه‌ی پیوسته دارند
+    # (اگر وسط دیتای ۱دقیقه جای خالیِ بیش از ۷ روز باشد، از بعد از آخرین جای خالی)
+    def m1_start(sym, m1):
+        tt = m1["time"].to_numpy(dtype="datetime64[ns]")
+        gaps = np.flatnonzero(np.diff(tt) > np.timedelta64(7, "D"))
+        if not len(gaps):
+            return pd.Timestamp(tt[0])
+        g = gaps[-1]
+        print(f"⚠️ {sym}: دیتای ۱دقیقه از {pd.Timestamp(tt[g]):%Y-%m-%d} تا {pd.Timestamp(tt[g + 1]):%Y-%m-%d} "
+              f"جای خالی دارد → بک‌تست از بعد از آن")
+        return pd.Timestamp(tt[g + 1])
+
+    l0 = max(m1_start(s, f[2]) for s, f in frames.items())
     l1 = min(pd.Timestamp(f[2]["time"].max()) for f in frames.values())
     s0, e0 = BACKTEST_START, (BACKTEST_END if BACKTEST_END is not None else l1)
     ns, ne = max(s0, l0), min(e0, l1)
     if ns >= ne:                      # هیچ هم‌پوشانی ندارند → کل بازه‌ی دیتای ۱دقیقه
         ns, ne = l0, l1
-    if ns > s0 + pd.Timedelta(days=1) or ne < e0 - pd.Timedelta(days=1):
-        print(f"ℹ️ دیتای ۱دقیقه فقط از {l0:%Y-%m-%d %H:%M} تا {l1:%Y-%m-%d %H:%M} هست → بازه‌ی بک‌تست: "
-              f"{ns:%Y-%m-%d} تا {ne:%Y-%m-%d} (به‌جای {s0:%Y-%m-%d} تا {e0:%Y-%m-%d})")
-        BACKTEST_START, BACKTEST_END = pd.Timestamp(ns), pd.Timestamp(ne)
+    BACKTEST_START, BACKTEST_END = pd.Timestamp(ns), pd.Timestamp(ne)
 
     d0 = min(f[0]["time"].min() for f in frames.values())
     d1 = max(f[0]["time"].max() for f in frames.values())

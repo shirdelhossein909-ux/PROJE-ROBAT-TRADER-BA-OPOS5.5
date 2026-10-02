@@ -7,6 +7,9 @@
 برای هر نماد یک فایل ZIP می‌سازد (مثلاً XAUUSD.zip) که داخلش برای هر تایم‌فریم یک CSV
 هست (مثلاً XAUUSD-240.csv) — دقیقاً همان فرمتی که run_backtest.py می‌خواند.
 فقط کندل‌های «بسته‌شده» ذخیره می‌شوند (کندلِ در حال شکل‌گیری حذف می‌شود).
+
+دیتا سال‌به‌سال از متاتریدر گرفته می‌شود (تا حجم زیاد کندل‌های ۱دقیقه متاتریدر را گیر نیندازد) و هر سالِ
+تمام‌شده جدا ذخیره می‌شود؛ آخر کار همه‌ی سال‌ها کنار هم گذاشته می‌شوند و ZIP ساخته می‌شود.
 """
 
 import os
@@ -20,24 +23,24 @@ import datetime as dt
 # =====================================================================================
 
 # ۱) از چند سال قبل تا امروز دیتا گرفته شود؟
-#    مثلاً 3 یعنی ۳ سال گذشته تا همین الان. (عدد اعشاری هم می‌شود: 0.5 یعنی ۶ ماه)
+#    مثلاً 6 یعنی ۶ سال گذشته تا همین الان. (عدد اعشاری هم می‌شود: 0.5 یعنی ۶ ماه)
 #    ⚠️ تایم‌های ریز حجیم‌اند: هر سال ≈ ۲۵ هزار کندل ۱۵دقیقه، ۷۵ هزار کندل ۵دقیقه، ۳۷۰ هزار کندل ۱دقیقه.
-#       اگر از «Max bars in chart» متاتریدر بیشتر شود، دیتای قدیمی‌تر نمی‌آید (پایین را ببین).
-YEARS_BACK = 3
+#       «Max bars in chart» متاتریدر باید Unlimited باشد، وگرنه دیتای قدیمی‌تر نمی‌آید (پایین را ببین).
+YEARS_BACK = 6
 
 # ۲) یا به‌جای «چند سال قبل»، تاریخ دقیق بده (اختیاری).
 #    فرمت: "2020-01-01"  — اگر START_DATE پر شود، YEARS_BACK نادیده گرفته می‌شود.
 #    END_DATE خالی یعنی «تا همین الان».
-START_DATE = "2025-01-01"
-END_DATE = "2025-12-31"
+START_DATE = ""
+END_DATE = ""
 #    گرم‌کردن: تایم‌های ۱۵دقیقه و بالاتر از این چند روز قبل از START_DATE گرفته می‌شوند تا روند ۴ساعته و
 #    زون‌ها روز اول بک‌تست آماده باشند (معامله فقط از START_DATE؛ همان WARMUP_DAYS در run_backtest.py).
 #    تایم‌های ۱ و ۵ دقیقه فقط از خود START_DATE.
 WARMUP_DAYS = 120
-#    اگر متاتریدر دیتای ۱دقیقه‌ی این بازه را نداشت (مثلاً «Max bars in chart» کم است)، هر چقدر دیتای ۱دقیقه
-#    دارد (آخرین کندل‌ها) گرفته می‌شود و بقیه‌ی تایم‌ها هم برای همان بازه دانلود می‌شوند. بک‌تستر هم خودش
-#    بازه را با دیتای ۱دقیقه هماهنگ می‌کند. False = فقط همان بازه‌ی بالا.
-LTF_FALLBACK_LATEST = True
+#    دانلود سال‌به‌سال: هر سالِ تمام‌شده جدا در پوشه‌ی «سال_به_سال» داخل پوشه‌ی خروجی (OUT_DIR) ذخیره می‌شود؛
+#    اگر دانلود نصفه ماند یا دوباره اجرا کردی، سال‌های ذخیره‌شده دوباره از متاتریدر گرفته نمی‌شوند (سال جاری
+#    همیشه تازه گرفته می‌شود). برای دانلود دوباره‌ی همه‌چیز، آن پوشه را پاک کن.
+YEARS_DIR_NAME = "سال_به_سال"
 
 # ۳) تایم‌فریم‌ها — هر ردیف: ("برچسب اسم فایل", "تایم‌فریم متاتریدر")
 #    برچسب در اسم فایل می‌آید؛ مثلاً ("240", "H4") فایل XAUUSD-240.csv را می‌سازد.
@@ -61,9 +64,10 @@ TIMEFRAMES = [
     # ("60",  "H1"),
 ]
 
-# ۴) نمادها — همان سبد ربات. اگر نزد بروکر پسوند دارند (مثلاً XAUUSD.m)، خودش پیدا می‌کند.
-SYMBOLS = ["XAUUSD", "AUDJPY", "AUDUSD", "CHFJPY", "EURCAD", "EURNZD",
-           "GBPJPY", "GBPNZD", "NZDCAD", "USDCHF"]
+# ۴) نمادها — فعلاً فقط طلا (دیتای ۱دقیقه‌ی ۶ساله‌ی هر نماد حجیم است). اگر نزد بروکر پسوند دارند
+#    (مثلاً XAUUSD.m)، خودش پیدا می‌کند. بقیه‌ی سبد قبلی:
+#    "AUDJPY", "AUDUSD", "CHFJPY", "EURCAD", "EURNZD", "GBPJPY", "GBPNZD", "NZDCAD", "USDCHF"
+SYMBOLS = ["XAUUSD"]
 
 # ۵) پوشه‌ی خروجی (فایل‌های ZIP اینجا ساخته می‌شوند).
 #    بک‌تستر دیتا را از پوشه‌ی «0» روی دسکتاپ می‌خواند. پیش‌فرض اینجا یک پوشه‌ی جدا است
@@ -94,6 +98,7 @@ BARS_PER_YEAR = {"M1": 374400, "M5": 74880, "M15": 24960, "M30": 12480, "H1": 62
 # تایم‌فریم‌هایی که بک‌تستر (run_backtest.py) لازم دارد
 BACKTEST_NEED = ("1", "15", "240")
 LTF_NAMES = ("M1", "M5")      # بدون گرم‌کردن (فقط از START_DATE)
+YEAR_COMPLETE = 0.85          # سالی ذخیره می‌شود که دست‌کم این سهم از کندل‌های یک سال کامل را داشته باشد
 
 def _fail(msg):
     """پیام خطا + (اگر مستقیم دابل‌کلیک شده) صبر تا کاربر پیام را بخواند."""
@@ -186,11 +191,16 @@ def _fetch_range(name, tf, start, end):
     چند بار صبر می‌کند و دوباره می‌پرسد."""
     rates = None
     best = 0
+    t0, t1 = int(start.timestamp()), int(end.timestamp())
     for attempt in range(4):
         rates = mt5.copy_rates_range(name, tf, start, end)
+        if rates is not None and len(rates):         # متاتریدر گاهی یک کندل بی‌ربط بیرون از بازه می‌دهد
+            rates = rates[(rates["time"] >= t0) & (rates["time"] < t1)]
         n = 0 if rates is None else len(rates)
         # تاریخچه‌ی این تکه رسیده؟ (شروعش نزدیک شروع درخواست، یا تعدادش دیگر زیاد نمی‌شود)
         if n and (int(rates["time"][0]) <= start.timestamp() + 7 * 86400 or n == best):
+            break
+        if not n and attempt >= 1:          # دو بار هیچ نیامد → این تکه در متاتریدر دیتا ندارد
             break
         best = max(best, n)
         time.sleep(2)
@@ -204,13 +214,15 @@ def fetch(name, tf_name, start, end):
     per_day = BARS_PER_YEAR[tf_name] / 365.25
     step = dt.timedelta(days=max(7, int(40000 / per_day)))
     parts = []
-    a = start
-    while a < end:
-        b = min(a + step, end)
+    b = end
+    while b > start:                                   # از جدید به قدیم
+        a = max(b - step, start)
         r = _fetch_range(name, tf, a, b)
         if r is not None and len(r):
             parts.append(pd.DataFrame(r))
-        a = b
+        elif parts:                                    # قدیمی‌تر از این تکه در متاتریدر دیتا نیست
+            break
+        b = a
     if not parts:
         return None
     df = pd.concat(parts, ignore_index=True).drop_duplicates("time").sort_values("time")
@@ -218,20 +230,38 @@ def fetch(name, tf_name, start, end):
     return df[["time", "open", "high", "low", "close"]].reset_index(drop=True)
 
 
-def fetch_latest(name, tf_name, count):
-    """آخرین count کندلِ موجود در متاتریدر (وقتی تاریخچه‌ی بازه‌ی خواسته‌شده در دسترس نیست)."""
-    tf = getattr(mt5, "TIMEFRAME_" + tf_name)
-    rates = None
-    for attempt in range(4):
-        rates = mt5.copy_rates_from_pos(name, tf, 1, int(count))
-        if rates is not None and len(rates):
+def fetch_by_year(name, base, lab, tf_name, start, end, years_dir):
+    """کندل‌های بازه، سال‌به‌سال: هر سال تقویمی جدا از متاتریدر گرفته می‌شود و سال‌های تمام‌شده‌ی کامل در
+    years_dir ذخیره می‌شوند (دفعه‌ی بعد از همان‌جا خوانده می‌شوند). آخر کار همه‌ی سال‌ها کنار هم."""
+    now = dt.datetime.now(dt.timezone.utc)
+    folder = os.path.join(years_dir, base)
+    os.makedirs(folder, exist_ok=True)
+    parts, report = [], []
+    for y in range(end.year, start.year - 1, -1):     # از جدید به قدیم
+        a = dt.datetime(y, 1, 1, tzinfo=dt.timezone.utc)
+        b = min(dt.datetime(y + 1, 1, 1, tzinfo=dt.timezone.utc), end)
+        if b <= start or a >= end:
+            continue
+        path = os.path.join(folder, f"{base}-{lab}-{y}.csv")
+        done = b.year > y and b < now                    # سال تمام‌شده
+        if done and os.path.exists(path):
+            df, src = pd.read_csv(path, parse_dates=["time"]), "ذخیره"
+        else:
+            df, src = in_range(fetch(name, tf_name, a, b), a, b), ""
+            if done and df is not None and len(df) >= YEAR_COMPLETE * BARS_PER_YEAR[tf_name]:
+                df.to_csv(path, index=False)
+        n = 0 if df is None else len(df)
+        report.append(f"{y}: {n:,}" + (f" ({src})" if src and n else ""))
+        if n:
+            parts.append(df)
+        elif parts:                                    # سال‌های قدیمی‌تر در متاتریدر دیتا ندارند
+            report.append(f"قبل از {y}: ندارد")
             break
-        time.sleep(2)
-    if rates is None or not len(rates):
+    print(f"   {base:7s} {tf_name:4s} سال‌به‌سال → " + " | ".join(reversed(report)), flush=True)
+    if not parts:
         return None
-    df = pd.DataFrame(rates).drop_duplicates("time").sort_values("time")
-    df["time"] = pd.to_datetime(df["time"], unit="s")
-    return df[["time", "open", "high", "low", "close"]].reset_index(drop=True)
+    df = pd.concat(parts, ignore_index=True).drop_duplicates("time").sort_values("time")
+    return in_range(df.reset_index(drop=True), start, end)
 
 
 def in_range(df, a, b):
@@ -425,12 +455,9 @@ def main():
         print("   (ادامه می‌دهم، ولی دیتای تایم‌فریم‌های ریز ممکن است از شروع بازه کوتاه‌تر باشد.)\n")
 
     os.makedirs(OUT_DIR, exist_ok=True)
+    years_dir = os.path.join(OUT_DIR, YEARS_DIR_NAME)
     summary = []
     spread_rows = []
-    fallback_syms = []
-    latest_count = (maxbars - 2) if (maxbars and maxbars < 10 ** 8) else 600000
-    # اول تایم‌های ریز (۱دقیقه): بازه‌ی واقعیِ موجودشان بازه‌ی بقیه‌ی تایم‌ها را تعیین می‌کند
-    ordered_tfs = sorted(TIMEFRAMES, key=lambda x: x[1] not in LTF_NAMES)
     for base in SYMBOLS:
         name = resolve(base)
         if name is None:
@@ -451,25 +478,9 @@ def main():
 
         files = {}
         notes = []
-        sym_start, sym_end = start, end
-        for lab, tf_name in ordered_tfs:
-            tf_start = sym_start if tf_name in LTF_NAMES else sym_start - dt.timedelta(days=WARMUP_DAYS)
-            df = in_range(fetch(name, tf_name, tf_start, sym_end), tf_start, sym_end)
-            df = drop_open_bar(df, tf_name, last_tick)
-            if tf_name in LTF_NAMES and LTF_FALLBACK_LATEST:
-                span_y = (min(sym_end, dt.datetime.now(dt.timezone.utc)) - sym_start).days / 365.25
-                if df is None or len(df) < 0.8 * BARS_PER_YEAR[tf_name] * span_y:
-                    lat = drop_open_bar(fetch_latest(name, tf_name, latest_count), tf_name, last_tick)
-                    if lat is not None and len(lat) > (0 if df is None else len(df)):
-                        df = lat
-                        f0 = lat["time"].iloc[0].to_pydatetime().replace(tzinfo=dt.timezone.utc)
-                        f1 = lat["time"].iloc[-1].to_pydatetime().replace(tzinfo=dt.timezone.utc)
-                        sym_start, sym_end = f0, f1 + dt.timedelta(minutes=1)
-                        tf_start = sym_start
-                        fallback_syms.append(base)
-                        notes.append(f"{tf_name} فقط {f0:%Y-%m-%d} تا {f1:%Y-%m-%d}")
-                        print(f"   ℹ️ {base} {tf_name}: دیتای بازه‌ی خواسته‌شده در متاتریدر نیست؛ هر چه بود گرفته شد "
-                              f"({f0:%Y-%m-%d} تا {f1:%Y-%m-%d}) و بقیه‌ی تایم‌ها هم برای همین بازه گرفته می‌شوند.")
+        for lab, tf_name in TIMEFRAMES:
+            tf_start = start if tf_name in LTF_NAMES else start - dt.timedelta(days=WARMUP_DAYS)
+            df = drop_open_bar(fetch_by_year(name, base, lab, tf_name, tf_start, end, years_dir), tf_name, last_tick)
             if df is None or df.empty:
                 notes.append(f"{tf_name}: دیتا نیامد")
                 print(f"   ⚠️ {base} {tf_name}: دیتا نیامد")
@@ -507,11 +518,9 @@ def main():
     print("=" * 64)
     for base, st, note in summary:
         print(f" {st:10s} {base:7s} {note}")
-    if fallback_syms:
-        print(f"\nℹ️ دیتای ۱دقیقه‌ی بازه‌ی {START_DATE} تا {END_DATE or 'امروز'} در متاتریدر نبود؛ برای "
-              f"{', '.join(fallback_syms)} آخرین دیتای موجود گرفته شد. بک‌تستر بازه را خودش با دیتای ۱دقیقه هماهنگ می‌کند.")
-        print("   برای بازه‌ی کامل: متاتریدر → Tools → Options → Charts → Max bars in chart = Unlimited، بعد متاتریدر را")
-        print("   کامل ببند و دوباره باز کن و این فایل را دوباره اجرا کن.")
+    print("\nℹ️ اگر سال‌های قدیمی‌ی ۱دقیقه نیامد: متاتریدر → Tools → Options → Charts → Max bars in chart = Unlimited،")
+    print("   بعد متاتریدر را کامل ببند و دوباره باز کن و این فایل را دوباره اجرا کن (سال‌های ذخیره‌شده دوباره گرفته نمی‌شوند).")
+    print("   بک‌تستر بازه را خودش با دیتای ۱دقیقه هماهنگ می‌کند.")
     print(f"\nفایل‌ها در: {OUT_DIR}")
     if os.path.normcase(os.path.abspath(OUT_DIR)) != os.path.normcase(
             os.path.join(os.path.expanduser("~"), "Desktop", "0")):
