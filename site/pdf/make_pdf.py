@@ -2,12 +2,10 @@
 """رزومه‌ی پی‌دی‌اف (فارسی و انگلیسی) از روی HTML با مرورگر کرومیوم.
 اجرا:  python site/pdf/make_pdf.py
 خروجی: site/pdf/رزومه_حسین_شیردل.pdf و site/pdf/Hossein_Shirdel_Resume.pdf"""
-import io
 import json
 import os
 import random
 import re
-import sys
 
 import qrcode
 import qrcode.image.svg
