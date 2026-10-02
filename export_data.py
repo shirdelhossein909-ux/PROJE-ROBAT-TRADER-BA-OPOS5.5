@@ -47,12 +47,8 @@ LTF_FALLBACK_LATEST = True
 #       "M1" → "1"    "M5" → "5"    "M15" → "15"   "M30" → "30"
 #       "H1" → "60"   "H4" → "240"  "D1"  → "1D"   "W1"  → "1W"
 #
-#    بک‌تستر (run_backtest.py) بسته به تنظیم STRATEGY_TF یکی از این دو دسته را لازم دارد:
-#       STRATEGY_TF = "M15" → برچسب‌های  15 و 240        (بیس ۱۵دقیقه، روند و زون مخالف ۴ساعته)
-#       STRATEGY_TF = "H4"  → برچسب‌های  240 و 1D و 1W   (همان ربات لایو فعلی)
-#    ℹ️ اگر یک تایم ریزتر از تایم زون هم بگیری (مثلاً "5" یا "1" برای دسته‌ی M15)، بک‌تستر خودش
-#       پیدایش می‌کند و ترتیب واقعی اتفاقات داخل کندل را از روی آن حساب می‌کند (دقیق‌تر).
-#    دسته‌ی فعلی = STRATEGY_TF="M15" (بیس ۱۵دقیقه، روند ۴ساعته، تأیید چاک ۱دقیقه)
+#    بک‌تستر (run_backtest.py) برچسب‌های 1 و 15 و 240 را لازم دارد
+#       (تأیید چاک ۱دقیقه، بیس ۱۵دقیقه، روند و زون مخالف ۴ساعته)
 #    ℹ️ ۱دقیقه برای تأیید چاک لازم است؛ یک سالش ≈ ۳۷۰ هزار کندل → «Max bars in chart» متاتریدر
 #       باید Unlimited باشد.
 TIMEFRAMES = [
@@ -95,8 +91,8 @@ TF_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600,
               "H4": 14400, "D1": 86400, "W1": 604800}
 BARS_PER_YEAR = {"M1": 374400, "M5": 74880, "M15": 24960, "M30": 12480, "H1": 6240,
                  "H4": 1560, "D1": 260, "W1": 52}
-# دسته‌های تایم‌فریمی که بک‌تستر می‌شناسد (باید با TF_SETS در run_backtest.py یکی باشد)
-BACKTEST_SETS = {"M15": ("15", "240"), "H4": ("240", "1D", "1W")}
+# تایم‌فریم‌هایی که بک‌تستر (run_backtest.py) لازم دارد
+BACKTEST_NEED = ("1", "15", "240")
 LTF_NAMES = ("M1", "M5")      # بدون گرم‌کردن (فقط از START_DATE)
 
 def _fail(msg):
@@ -139,9 +135,8 @@ def check_settings():
     labels = [lab for lab, _ in TIMEFRAMES]
     if not labels:
         problems.append("TIMEFRAMES خالی است؛ حداقل یک تایم‌فریم لازم است.")
-    elif not any(all(l in labels for l in need) for need in BACKTEST_SETS.values()):
-        problems.append("با این تایم‌فریم‌ها بک‌تستر اجرا نمی‌شود. یکی از این دو دسته لازم است: "
-                        + " یا ".join(f"«{' و '.join(v)}» (STRATEGY_TF={k})" for k, v in BACKTEST_SETS.items()))
+    elif not all(l in labels for l in BACKTEST_NEED):
+        problems.append(f"با این تایم‌فریم‌ها بک‌تستر اجرا نمی‌شود. برچسب‌های «{' و '.join(BACKTEST_NEED)}» لازم است.")
     for lab, name in TIMEFRAMES:
         if name not in TF_SECONDS:
             problems.append(f"تایم‌فریم «{name}» شناخته‌شده نیست. مجازها: {', '.join(TF_SECONDS)}")
@@ -491,7 +486,7 @@ def main():
             print(f"❌ {base}: هیچ دیتایی نیامد — ZIP ساخته نشد.\n")
             summary.append((base, "ناقص", "، ".join(notes)))
             continue
-        if not any(all(f"{base}-{l}.csv" in files for l in need) for need in BACKTEST_SETS.values()):
+        if not all(f"{base}-{l}.csv" in files for l in BACKTEST_NEED):
             notes.append("برای بک‌تست کامل نیست")
 
         zpath = os.path.join(OUT_DIR, f"{base}.zip")
@@ -521,10 +516,6 @@ def main():
     if os.path.normcase(os.path.abspath(OUT_DIR)) != os.path.normcase(
             os.path.join(os.path.expanduser("~"), "Desktop", "0")):
         print("برای بک‌تست: فایل‌های ZIP و spreads.csv این پوشه را در پوشه‌ی «0» روی دسکتاپ کپی کن (جای قبلی‌ها).")
-    labels = [lab for lab, _ in TIMEFRAMES]
-    fits = [k for k, need in BACKTEST_SETS.items() if all(l in labels for l in need)]
-    if fits:
-        print(f"در run_backtest.py مقدار STRATEGY_TF باید «{fits[0]}» باشد (همان بالای فایل).")
     if log_path:
         print(f"گزارش کامل این دانلود: {log_path}")
     return 0
